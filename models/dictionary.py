@@ -1,6 +1,3 @@
-from enum import Enum
-
-
-class PartOfSpeech(Enum):
-    PRONOUN = 'PRON',
+class PartOfSpeech:
+    PRONOUN = 'PRON'
     NOUN = 'NOUN'
