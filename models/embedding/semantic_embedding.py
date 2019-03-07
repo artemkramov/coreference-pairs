@@ -1,10 +1,11 @@
 import numpy as np
 import random
 import io
+from models.embedding.base_embedding import BaseEmbedding
 
 
 # Class for performing of semantic transformations (word-vec, text-vec etc.)
-class SemanticEmbedding:
+class SemanticEmbedding(BaseEmbedding):
 
     # Model which contains pairs word-vector
     model = {}
@@ -40,3 +41,18 @@ class SemanticEmbedding:
             return self.model[word]
         random_word = random.choice(self.model_keys)
         return self.model[random_word]
+
+    # Convert pair of entities to a single vector
+    def pair2vec(self, pair_words):
+        matrix = []
+        for words in pair_words:
+            matrix.append(self.entity2vec(words))
+        return np.mean(np.array(matrix), axis=0)
+
+    # Convert a set of words (entity) to a single vector
+    def entity2vec(self, words):
+        matrix = []
+        for word in words:
+            matrix.append(self.word2vec(word))
+        return np.mean(np.array(matrix), axis=0)
+

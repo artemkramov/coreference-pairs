@@ -2,16 +2,28 @@ import config.db as db
 from models.db.word import DbWord
 import uuid
 import itertools
+from models.embedding.scalar_embedding import ScalarEmbedding
+from models.embedding.semantic_embedding import SemanticEmbedding
 
 
 # Class to prepare learned data
 class PrepareLearnData:
-
     documents = {}
+
+    all_tokens = {}
 
     MAX_CLUSTER_SIZE = 7
 
     MAX_ENTITIES_SEPARATE_SIZE = 50
+
+    semantic_embedding = None
+
+    scalar_embedding = None
+
+    # Load embedding models
+    def load_embeddings(self):
+        # self.semantic_embedding = SemanticEmbedding()
+        self.scalar_embedding = ScalarEmbedding()
 
     # Load all documents from DB and group it
     def load_documents(self):
@@ -27,11 +39,12 @@ class PrepareLearnData:
         # Group tokens by documents
         for token in tokens:
             if not (token.DocumentID in documents):
-                documents[token.DocumentID] = {'tokens': [], 'entities': {}, 'clusters': {}, 'entities_separate': []}
+                documents[token.DocumentID] = {'tokens': [], 'entities': {}, 'clusters': {}, 'entities_separate': [] }
             documents[token.DocumentID]['tokens'].append(token)
 
         # Group tokens of documents by entities
         for document_id in documents:
+
             entities = {}
             clusters = {}
             entities_separate = []
@@ -152,15 +165,75 @@ class PrepareLearnData:
     def form_train_pairs(self):
         dataset = {'correct': [], 'incorrect': []}
         for document_id in self.documents:
+            document_dataset = {'correct': [], 'incorrect': []}
+
+            self.scalar_embedding.evaluate_tfidf(self.documents[document_id]['tokens'])
+
+            # Retrieve clusters
+            # Loop through all clusters and form different combinations of correct pairs
             clusters = self.documents[document_id]['clusters']
             for cluster_id in clusters:
                 items = clusters[cluster_id]
-                dataset['correct'].extend(self.form_combinations_with_split(items))
-            dataset['incorrect'] = self.form_combinations_with_split(self.documents[document_id]['entities_separate'])
-        a = 4
+                document_dataset['correct'].extend(self.form_combinations_with_split(items))
+
+            # Form all incorrect combinations
+            document_dataset['incorrect'] = self.form_combinations_with_split(
+                self.documents[document_id]['entities_separate'])
+
+            # Loop through different labeled datasets
+            for label in document_dataset:
+                pairs = document_dataset[label]
+                for pair in pairs:
+                    # Get matrix of pairs
+                    pair_matrix = self.get_matrix_from_pair_links(pair, self.documents[document_id]['entities'])
+                    sclar_matrix = self.get_scalar_matrix_from_pair(pair_matrix)
+                    # semantic_matrix = self.get_semantic_matrix_from_pair(pair_matrix)
+                    a = 4
+
+    def get_scalar_matrix_from_pair(self, pair_matrix):
+        return self.scalar_embedding.matrix2vec(pair_matrix)
+
+    # Get semantic matrix from the given pair of entities
+    def get_semantic_matrix_from_pair(self, pair_matrix):
+        matrix = []
+
+        # From the matrix of tokens
+        # form the corresponding matrix of words
+        for entity_pair in pair_matrix:
+
+            # Words of each pair
+            words = []
+            for entity_tokens in entity_pair:
+
+                # Words of each entity
+                entity_words = []
+                for token in entity_tokens:
+                    entity_words.append(token.Lemmatized.lower())
+                words.append(entity_words)
+            matrix.append(words)
+
+        return self.semantic_embedding.matrix2vec(matrix)
+
+    # Form matrix of pairs of entities
+    # from the entity links
+    @staticmethod
+    def get_matrix_from_pair_links(pair, entities):
+
+        # Init matrix
+        pair_matrix = []
+
+        # Loop through each pair and create all possible pair variants
+        # Fetch each entity data by the link
+        for first_entity_id in pair[0]:
+            first_entity = entities[first_entity_id]
+            for second_entity_id in pair[1]:
+                second_entity = entities[second_entity_id]
+                pair_matrix.append((first_entity, second_entity))
+        return pair_matrix
 
 
 if __name__ == "__main__":
     model = PrepareLearnData()
     model.load_documents()
+    model.load_embeddings()
     model.form_train_pairs()
