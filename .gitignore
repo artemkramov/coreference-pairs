@@ -1,2 +1,3 @@
 .idea/
 models/news.lowercased.lemmatized.glove.300d
+models/vectors.50d

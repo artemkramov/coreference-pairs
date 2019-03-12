@@ -1,6 +1,11 @@
 from models.embedding.base_embedding import BaseEmbedding
 from models.dictionary import PartOfSpeech
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn import preprocessing
+from sklearn.exceptions import DataConversionWarning
+import warnings
+
+warnings.filterwarnings(action='ignore', category=DataConversionWarning)
 
 
 class ScalarEmbedding(BaseEmbedding):
@@ -46,6 +51,13 @@ class ScalarEmbedding(BaseEmbedding):
         tfidf.fit(sentences)
         self.tfidf = tfidf.vocabulary_
 
+    # Inherit parent method to normalize the retrieved matrix
+    def matrix2vec(self, pair_matrix):
+        matrix = super(ScalarEmbedding, self).matrix2vec(pair_matrix)
+        matrix_normalized = preprocessing.MinMaxScaler().fit_transform(matrix)
+        return matrix_normalized
+
+    # Inherit empty parent method to extract appropriate scalar features
     def pair2vec(self, pair_words):
         vector = []
 
@@ -107,7 +119,32 @@ class ScalarEmbedding(BaseEmbedding):
         # Check if both entities are proper names
         vector.append(int(first_item_head.IsProperName and second_item_head.IsProperName))
 
+        # Check if one object can be represented as an additional information for another
+        word_interval = self.tokens[start_index:last_index]
+        is_additional = 0
+        punct_additional = [',', '-', '‒', '–', '—']
 
+        # Check if there is no entity between current entities
+        if entity_count == 0:
+            is_punct_found = False
+            is_verb_found = False
+
+            # Loop through each token between them
+            # and check if appropriate punctuation symbol exists
+            # Also check if there is a verb inside the interval
+            for token in word_interval:
+                if token.RawText in punct_additional:
+                    is_punct_found = True
+                if token.PartOfSpeech == PartOfSpeech.VERB:
+                    is_verb_found = True
+
+            # If the punctuation symbol is found and no verb between them
+            # than mark them as additional
+            if is_punct_found and (not is_verb_found):
+                is_additional = 1
+        vector.append(is_additional)
+
+        return vector
 
     # Parse tag string (like Animacy=Inan|Case=Loc|Gender=Masc|Number=Sing
     @staticmethod

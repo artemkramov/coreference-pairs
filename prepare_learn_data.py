@@ -22,7 +22,7 @@ class PrepareLearnData:
 
     # Load embedding models
     def load_embeddings(self):
-        # self.semantic_embedding = SemanticEmbedding()
+        self.semantic_embedding = SemanticEmbedding()
         self.scalar_embedding = ScalarEmbedding()
 
     # Load all documents from DB and group it
@@ -168,6 +168,7 @@ class PrepareLearnData:
             document_dataset = {'correct': [], 'incorrect': []}
 
             self.scalar_embedding.evaluate_tfidf(self.documents[document_id]['tokens'])
+            self.semantic_embedding.tokens = self.documents[document_id]['tokens']
 
             # Retrieve clusters
             # Loop through all clusters and form different combinations of correct pairs
@@ -181,14 +182,16 @@ class PrepareLearnData:
                 self.documents[document_id]['entities_separate'])
 
             # Loop through different labeled datasets
+            class_labels = {'correct': 1, 'incorrect': 0}
             for label in document_dataset:
                 pairs = document_dataset[label]
                 for pair in pairs:
                     # Get matrix of pairs
                     pair_matrix = self.get_matrix_from_pair_links(pair, self.documents[document_id]['entities'])
-                    sclar_matrix = self.get_scalar_matrix_from_pair(pair_matrix)
-                    # semantic_matrix = self.get_semantic_matrix_from_pair(pair_matrix)
-                    a = 4
+                    scalar_matrix = self.get_scalar_matrix_from_pair(pair_matrix)
+                    semantic_matrix = self.get_semantic_matrix_from_pair(pair_matrix)
+
+
 
     def get_scalar_matrix_from_pair(self, pair_matrix):
         return self.scalar_embedding.matrix2vec(pair_matrix)
@@ -208,7 +211,7 @@ class PrepareLearnData:
                 # Words of each entity
                 entity_words = []
                 for token in entity_tokens:
-                    entity_words.append(token.Lemmatized.lower())
+                    entity_words.append(token)
                 words.append(entity_words)
             matrix.append(words)
 
