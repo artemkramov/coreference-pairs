@@ -9,6 +9,10 @@ from keras.utils import plot_model
 import keras
 import numpy as np
 from random import shuffle
+import os
+from os import listdir
+from os.path import isfile, join
+import shutil
 
 
 # Class to perform compiling and training of model
@@ -19,38 +23,17 @@ class Training:
     # Configuration object
     config = []
 
-    X_train = []
-    Y_train = []
+    # Template to save models
+    filename_template = "model_{0}"
+
+    # Folder to save models during training
+    folder_models = "bin"
 
     def __init__(self):
         # Load configuration data
         config = configparser.ConfigParser()
         config.read('config/train.ini')
         self.config = config
-
-    # def load_train_data(self):
-    #     filename = 'dataset/data-0.pkl'
-    #     handle = open(filename, 'rb')
-    #     items = pickle.load(handle)
-    #
-    #     batches = {}
-    #
-    #     # Group items by the length of columns
-    #     for x in items:
-    #         variable_length = x['scalar'].shape[1]
-    #         if not (variable_length in batches):
-    #             batches[variable_length] = []
-    #         batches[variable_length].append(x)
-    #
-    #     # Shuffle batches
-    #     for key in batches:
-    #         shuffle(batches[key])
-    #
-    #     x_sem = [np.expand_dims(x['semantic'], axis=2) for x in items]
-    #     x_scal = [np.expand_dims(x['scalar'], axis=2) for x in items]
-    #     self.X_train = [x_sem, x_scal]
-    #     self.Y_train = [x['label'] for x in items]
-    #     handle.close()
 
     # Split list into chunks of the fixed length
     @staticmethod
@@ -59,54 +42,183 @@ class Training:
         for i in range(0, len(l), n):
             yield l[i:i + n]
 
+    # Train model
     def train_model(self):
+        folder = 'dataset'
         config_training = self.config['TRAINING']
-        filename = 'dataset/data-0.pkl'
-        handle = open(filename, 'rb')
-        items = pickle.load(handle)
-        handle.close()
-
-        batches = {}
-
-        # Group items by the length of columns
-        for x in items:
-            variable_length = x['scalar'].shape[1]
-            if not (variable_length in batches):
-                batches[variable_length] = []
-            x['semantic'] = np.expand_dims(x['semantic'], axis=2)
-            x['scalar'] = np.expand_dims(x['scalar'], axis=2)
-            batches[variable_length].append(x)
-
-        # Split batches to mini-batches
-        mini_batches = []
-        for key in batches:
-            # Split batches to mini-batches
-            shuffle(batches[key])
-            chunks = self.chunks(batches[key], int(config_training['batch_size']))
-            mini_batches.extend(chunks)
-
-        shuffle(mini_batches)
+        files = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
 
         epochs = int(config_training['epochs'])
+        model_history = {
+            'loss': [],
+            'acc': [],
+            'val_loss': [],
+            'val_acc': []
+        }
+        # The percentage of validation set
+        validation_split = float(config_training['validation_split'])
+
+        # Number of epochs to check the overfitting
+        patience = int(config_training['patience'])
+
         for epoch in range(0, epochs):
 
             print('Epoch {}/{}'.format(epoch, epochs))
 
-            epoch_loss = []
+            # Init counters to calculate metrics
+            epoch_loss_total = 0
+            epoch_acc_total = 0
+            epoch_val_loss_total = 0
+            epoch_val_acc_total = 0
+            batch_counter = 0
+            batch_val_counter = 0
 
-            for mini_batch in mini_batches:
-                x_semantic = [x['semantic'] for x in mini_batch]
-                x_scalar = [x['scalar'] for x in mini_batch]
-                y = [x['label'] for x in mini_batch]
-                epoch_loss.append(self.model.train_on_batch([x_semantic, x_scalar], y))
-            print(epoch_loss)
+            # Loop through each dataset file and load it every epoch
+            # These files are too big to load in memory therefore they are loaded during every epoch
+            for filename in files:
+                handle = open(filename, 'rb')
+                items = pickle.load(handle)
+                handle.close()
 
-        # config_training = self.config['TRAINING']
-        # model_history = self.model.fit(self.X_train, [self.Y_train], shuffle=True,
-        #                                batch_size=int(config_training['batch_size']),
-        #                                epochs=int(config_training['epochs']),
-        #                                validation_split=float(config_training['validation_split']),
-        #                                verbose=int(config_training['verbose']))
+                batches = {}
+                print("Filename %s" % filename)
+
+                # Group items by the length of columns
+                for x in items:
+                    variable_length = x['scalar'].shape[1]
+                    if not (variable_length in batches):
+                        batches[variable_length] = []
+                    x['semantic'] = np.expand_dims(x['semantic'], axis=2)
+                    x['scalar'] = np.expand_dims(x['scalar'], axis=2)
+                    batches[variable_length].append(x)
+
+                # Split batches to mini-batches
+                mini_batches = []
+                for key in batches:
+                    # Split batches to mini-batches
+                    shuffle(batches[key])
+                    chunks = self.chunks(batches[key], int(config_training['batch_size']))
+                    mini_batches.extend(chunks)
+
+                shuffle(mini_batches)
+
+                # Split mini-batches into training and validation sets
+                separator_index = len(mini_batches) - int(validation_split * len(mini_batches)) - 1
+                mini_batches_train = mini_batches[:separator_index]
+                mini_batches_validation = mini_batches[separator_index:]
+
+                # Process training mini-batches
+                for mini_batch in mini_batches_train:
+                    metrics = self.process_mini_batch(mini_batch, 'train')
+                    if len(metrics) > 0:
+                        epoch_loss_total += metrics[0]
+                        epoch_acc_total += metrics[1]
+                        batch_counter += 1
+
+                # Calculate metrics for the validation set
+                for mini_batch in mini_batches_validation:
+                    metrics = self.process_mini_batch(mini_batch, 'test')
+                    if len(metrics) > 0:
+                        epoch_val_loss_total += metrics[0]
+                        epoch_val_acc_total += metrics[1]
+                        batch_val_counter += 1
+
+            # Count all metrics as average value per the whole epoch
+            epoch_loss = epoch_loss_total / batch_counter
+            epoch_acc = epoch_acc_total / batch_counter
+            epoch_val_loss = epoch_val_loss_total / batch_val_counter
+            epoch_val_acc = epoch_val_acc_total / batch_val_counter
+
+            # Write counted metrics to the model history object
+            model_history['loss'].append(epoch_loss)
+            model_history['acc'].append(epoch_acc)
+            model_history['val_loss'].append(epoch_val_loss)
+            model_history['val_acc'].append(epoch_val_acc)
+            print("loss: {0}, acc: {1}, val_loss: {2}, val_acc: {3}".format(epoch_loss, epoch_acc, epoch_val_loss,
+                                                                            epoch_val_acc))
+            # Check if the check of early stopping should be performed
+            if epoch + 1 > patience:
+                prev_loss = model_history['val_loss'][-patience]
+                if prev_loss < epoch_val_loss:
+                    print("Early stopping detected, stop the training process...")
+                    break
+                else:
+                    self.save_model(epoch, True)
+            else:
+                self.save_model(epoch)
+
+        # Leave just the best variant of model
+        self.leave_best_model(model_history['val_loss'], patience)
+
+    # Leave just the best one model
+    def leave_best_model(self, loss_history, patience):
+        i = len(loss_history) - 1
+        best_idx = i
+
+        # Find the index from the loss history with the lowest val_loss score
+        while i > len(loss_history) - 1 - patience:
+            if loss_history[i] < loss_history[best_idx]:
+                best_idx = i
+            i -= 1
+
+        # Loop through sorted list of subfolders
+        # And leave folder with list index equal to the best index
+        subfolders = os.listdir(self.folder_models)
+        subfolders.sort()
+        for idx, folder in enumerate(subfolders):
+            if i == idx:
+                continue
+            shutil.rmtree(join(self.folder_models, folder))
+
+    # Save current model to the filesystem
+    def save_model(self, epoch, shift=False):
+
+        # Create subfolder
+        subfolder = join(self.folder_models, str(epoch))
+        if not os.path.exists(subfolder):
+            os.makedirs(subfolder)
+
+        # Prepare filenames of the model
+        filename = self.filename_template.format(epoch)
+        filename_json = join(subfolder, filename + ".json")
+        filename_weights = join(subfolder, filename + ".h5")
+
+        # Save configuration of the model
+        model_json = self.model.to_json()
+        handle = open(filename_json, 'w')
+        handle.write(model_json)
+        handle.close()
+
+        # Save weights
+        self.model.save_weights(filename_weights)
+
+        # Check if it is necessary to remove the most outdated model
+        if shift:
+            # Get list of folders which contain saved models per epoch
+            subfolders = os.listdir(self.folder_models)
+            subfolders.sort()
+
+            # Remove the most outdated version
+            shutil.rmtree(join(self.folder_models, subfolders[0]))
+
+    # Process mini-batch corresponding to the given mode
+    def process_mini_batch(self, mini_batch, mode='train'):
+        # Form semantic and scalar matrices in separate way
+        # Also generate output vectors
+        x_semantic = [x['semantic'] for x in mini_batch]
+        x_scalar = [x['scalar'] for x in mini_batch]
+        y = [x['label'] for x in mini_batch]
+
+        # If it is the training mini-batch than pass batch with changing of weights
+        # Else just pass mini-batch and retrieve metrics
+        try:
+            if mode == 'train':
+                metrics = self.model.train_on_batch([x_semantic, x_scalar], y)
+            else:
+                metrics = self.model.test_on_batch([x_semantic, x_scalar], y)
+        except ValueError:
+            metrics = []
+        return metrics
 
     # Build CNN subnetwork with 2 layers
     @staticmethod
@@ -150,6 +262,7 @@ class Training:
                                        nesterov=bool(int(config_network['sgd_nesterov'])))
         model.compile(optimizer=optimizer, loss=config_network['loss'], metrics=['accuracy'])
         plot_model(model, to_file='debug/model.png', show_shapes=True)
+        print(model.summary())
         self.model = model
 
 
