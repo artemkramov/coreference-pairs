@@ -5,6 +5,7 @@ import itertools
 from models.embedding.scalar_embedding import ScalarEmbedding
 from models.embedding.semantic_embedding import SemanticEmbedding
 import pickle
+from random import shuffle
 
 
 # Class to prepare learned data
@@ -165,7 +166,8 @@ class PrepareLearnData:
     # Save items as a pickle file
     @staticmethod
     def save_items(items, chunk_counter):
-        file = 'dataset/data-{0}.pkl'.format(chunk_counter)
+        file = 'dataset_1/data-{0}.pkl'.format(chunk_counter)
+        shuffle(items)
         handle = open(file, 'wb')
         pickle.dump(items, handle, protocol=pickle.HIGHEST_PROTOCOL)
         handle.close()
@@ -174,7 +176,7 @@ class PrepareLearnData:
     # Form different combinations
     def form_train_pairs(self):
         data_items = []
-        chunk_size = 30000
+        chunk_size = 3000000
         chunk_counter = 0
         idx = 0
         for document_id in self.documents:
@@ -197,6 +199,11 @@ class PrepareLearnData:
 
             # Loop through different labeled datasets
             class_labels = {'correct': 1, 'incorrect': 0}
+
+            # Set the similar width of correct and incorrect labels
+            if len(document_dataset['incorrect']) > len(document_dataset['correct']):
+                document_dataset['incorrect'] = document_dataset['incorrect'][:len(document_dataset['correct'])]
+
             for label in document_dataset:
                 pairs = document_dataset[label]
                 for pair in pairs:
