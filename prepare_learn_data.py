@@ -164,14 +164,15 @@ class PrepareLearnData:
         return result
 
     # Save items as a pickle file
-    @staticmethod
-    def save_items(items, chunk_counter):
-        file = 'dataset_1/data-{0}.pkl'.format(chunk_counter)
+    def save_items(self, items, chunk_counter):
         shuffle(items)
-        handle = open(file, 'wb')
-        pickle.dump(items, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        handle.close()
-        print('Save chunk %s, len=%s' % (chunk_counter, len(items)))
+        chunks = list(self.chunks(items, 30000))
+        for idx, chunk in enumerate(chunks):
+            file = 'dataset_1/data-{0}.pkl'.format(idx)
+            handle = open(file, 'wb')
+            pickle.dump(chunk, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            handle.close()
+            print('Save chunk %s, len=%s' % (chunk_counter, len(chunk)))
 
     # Form different combinations
     def form_train_pairs(self):
