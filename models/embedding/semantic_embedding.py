@@ -92,6 +92,8 @@ class SemanticEmbedding(BaseEmbedding):
                 if current_token.PartOfSpeech != PartOfSpeech.PUNCT:
                     prev_tokens.append(current_token)
                 i -= 1
+        if len(prev_tokens) == 0:
+            prev_tokens.append(token)
         return self.entity2vec(prev_tokens)
 
     # Convert pair of entities to a single vector

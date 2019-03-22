@@ -180,10 +180,14 @@ class PrepareLearnData:
         chunk_size = 3000000
         chunk_counter = 0
         idx = 0
+
         for document_id in self.documents:
             document_dataset = {'correct': [], 'incorrect': []}
-            print("Document number: %s, len=%s" % (idx, len(self.documents)))
+
             idx += 1
+
+            print("Document number: %s, len=%s" % (idx, len(self.documents)))
+
             self.scalar_embedding.evaluate_tfidf(self.documents[document_id]['tokens'])
             self.semantic_embedding.tokens = self.documents[document_id]['tokens']
 
@@ -212,14 +216,11 @@ class PrepareLearnData:
                     pair_matrix = self.get_matrix_from_pair_links(pair, self.documents[document_id]['entities'])
                     scalar_matrix = self.get_scalar_matrix_from_pair(pair_matrix)
                     semantic_matrix = self.get_semantic_matrix_from_pair(pair_matrix)
+
                     item = {'label': class_labels[label], 'semantic': semantic_matrix, 'scalar': scalar_matrix}
                     data_items.append(item)
-                    if len(data_items) > chunk_size:
-                        self.save_items(data_items, chunk_counter)
-                        chunk_counter += 1
-                        data_items = []
-        if len(data_items) > 0:
-            self.save_items(data_items, chunk_counter)
+
+        self.save_items(data_items, chunk_counter)
 
     def get_scalar_matrix_from_pair(self, pair_matrix):
         return self.scalar_embedding.matrix2vec(pair_matrix)
