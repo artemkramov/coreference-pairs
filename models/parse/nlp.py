@@ -388,7 +388,7 @@ class NLP:
 
                 if is_personal_pronoun or token.PartOfSpeech == 'PROPN' or token.PartOfSpeech == 'X':
                     entities.append(position)
-                    tagged_words[position].EntityID = uuid.uuid4()
+                    tagged_words[position].EntityID = str(uuid.uuid4())
                     tagged_words[position].IsHeadWord = True
 
                 # Check if proper name was detected
