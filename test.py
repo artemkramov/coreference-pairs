@@ -34,11 +34,16 @@ for filename in files:
             if not (token.EntityID in entities):
                 entities[token.EntityID] = []
             entities[token.EntityID].append(token)
+
+    # Find aliases
+    aliases = sieve.find_aliases(entities)
+
     combinations = list(itertools.combinations(entities.keys(), 2))
     for comb in combinations:
         first_entity = entities[comb[0]]
         second_entity = entities[comb[1]]
-        result = sieve.apply([first_entity, second_entity], direct_speech_groups, tokens)
+        result = sieve.apply([first_entity, second_entity], direct_speech_groups, tokens, aliases)
+
         if result is not None:
             words = []
             for entity in first_entity:
