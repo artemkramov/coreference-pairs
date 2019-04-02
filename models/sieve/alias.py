@@ -26,14 +26,18 @@ class Alias:
 
     # Find wikipedia links for each named entity
     def find_wikipedia_links(self, entities):
-        search_titles = {}
 
+        # Resulting dictionary that contains entity ID with redirect links
         entity_links = {}
+
+        # Dictionary that will group all entities with the same lemmatized version
+        title_groups = {}
 
         # Loop through entities array
         for entity_id in entities:
             entity = entities[entity_id]
-            words = []
+            words_lemma = []
+            words_raw = []
 
             # Check if the entity is proper name
             is_proper_name = True
@@ -42,41 +46,51 @@ class Alias:
                     is_proper_name = False
                     break
                 # Append word to the list
-                words.append(token.Lemmatized)
-            if is_proper_name:
-                search_titles[entity_id] = ' '.join(words)
-        # If there is more named entities than 2
-        if len(search_titles) > 1:
-            # Get keys of dictionary and split them into several parts to keep up wikipedia requirements
-            keys = list(search_titles.keys())
-            chunks = list(self.chunks(keys, 40))
+                words_lemma.append(token.Lemmatized)
+                words_raw.append(token.RawText)
 
-            # Loop through chunks and send request
-            for chunk in chunks:
-                # Form title
-                words_chunk = []
-                for entity_id in chunk:
-                    words_chunk.append(search_titles[entity_id])
-                title = "|".join(words_chunk)
-                params = {
-                    'action': 'query',
-                    'format': 'json',
-                    'prop': 'redirects',
-                    'titles': title
-                }
-                print(title)
-                response = requests.post(self.url_api, params)
-                if response.status_code == 200:
-                    data = response.json()
-                    if "query" in data and "pages" in data["query"]:
-                        pages = data["query"]["pages"]
-                        counter = 0
-                        for key in pages:
-                            print(pages[key]["title"])
-                            page_id = int(key)
-                            if page_id > 0:
-                                entity_id = chunk[counter]
-                                entity_links[entity_id] = pages[key]
-                            counter += 1
+            # Add just named entities
+            # Group all entities with the same lemmatized version
+            if is_proper_name:
+                entity_lemma = ' '.join(words_lemma)
+                entity_raw = ' '.join(words_raw)
+                if not (entity_lemma in title_groups):
+                    title_groups[entity_lemma] = []
+
+                # Check if the Wikipedia limit isn't overflowed
+                if len(title_groups[entity_lemma]) < self.wikipedia_max_count:
+                    title_groups[entity_lemma].append({
+                        'entity_id': entity_id,
+                        'text': entity_raw
+                    })
+
+        for entity_lemma in title_groups:
+            # Form title from the lemmatized version and raw text
+            titles = [entity_lemma]
+            for item in title_groups[entity_lemma]:
+                titles.append(item['text'])
+            title = "|".join(titles)
+
+            # Form params and send query
+            params = {
+                'action': 'query',
+                'format': 'json',
+                'prop': 'redirects',
+                'titles': title
+            }
+            response = requests.post(self.url_api, params)
+            if response.status_code == 200:
+
+                # Read JSON response
+                data = response.json()
+                if "query" in data and "pages" in data["query"]:
+                    pages = data["query"]["pages"]
+                    for key in pages:
+                        page_id = int(key)
+                        if page_id > 0:
+                            for item in title_groups[entity_lemma]:
+                                entity_links[item['entity_id']] = pages[key]
+                            break
+
         return entity_links
 

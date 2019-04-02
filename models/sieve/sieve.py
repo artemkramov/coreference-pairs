@@ -172,7 +172,7 @@ class FullSymbolHandler(Handler):
                     break
             if is_equal:
                 return True
-        super().handle_request(entities, direct_speech_groups, tokens, aliases)
+        return super().handle_request(entities, direct_speech_groups, tokens, aliases)
 
 
 # Class to handle entities with partial conformity
@@ -188,7 +188,7 @@ class PartialSymbolHandler(Handler):
         # than set this pair as a co-referent
         if head_word_first.IsProperName and head_word_second.IsProperName and words_first == words_second:
             return True
-        super().handle_request(entities, direct_speech_groups, tokens, aliases)
+        return super().handle_request(entities, direct_speech_groups, tokens, aliases)
 
     # Find head word and get string of all preceding words of the head word
     @staticmethod
@@ -225,7 +225,7 @@ class AliasHandler(Handler):
                                               aliases[second_entity_id]) \
                     or self.is_entity_link_to_another(aliases[second_entity_id], aliases[first_entity_id]):
                 return True
-        super().handle_request(entities, direct_speech_groups, tokens, aliases)
+        return super().handle_request(entities, direct_speech_groups, tokens, aliases)
 
     # Check if one entity is link to another
     @staticmethod
