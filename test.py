@@ -15,5 +15,5 @@ coreferenceModel = CoreferenceModel()
 for filename in files:
     file = io.open(filename, mode="r", encoding="utf-8")
     raw_text = file.read()
-    coreferenceModel.find_coreference_pairs(raw_text)
+    coreferenceModel.find_coreference_pairs_from_text(raw_text)
     file.close()

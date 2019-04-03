@@ -32,7 +32,7 @@ class Sieve:
         full_symbol_handler = FullSymbolHandler()
         partial_symbol_handler = PartialSymbolHandler()
         alias_handler = AliasHandler()
-        discourse_handler.set_next(full_symbol_handler).set_next(partial_symbol_handler).set_next(alias_handler)
+        discourse_handler.set_next(full_symbol_handler).set_next(partial_symbol_handler) #.set_next(alias_handler)
         return discourse_handler.handle_request(entities, direct_speech_groups, tokens, aliases)
 
 
