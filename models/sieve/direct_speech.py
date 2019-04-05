@@ -106,11 +106,14 @@ class DirectSpeech:
                         end = match.end(key)
                         match_ranges.append(set(range(start, end)))
 
-                        selected_tokens = tokens[token_positions[start]:token_positions[end]]
-                        role = 'author'
-                        if 'direct' in key:
-                            role = 'direct'
-                        for token in selected_tokens:
-                            response[token.WordOrder] = {'group_id': group_id, 'role': role}
+                        try:
+                            selected_tokens = tokens[token_positions[start]:token_positions[end]]
+                            role = 'author'
+                            if 'direct' in key:
+                                role = 'direct'
+                            for token in selected_tokens:
+                                response[token.WordOrder] = {'group_id': group_id, 'role': role}
+                        except Exception:
+                            pass
 
         return response

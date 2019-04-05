@@ -1,11 +1,13 @@
 import config.db as db
 from models.db.word import DbWord
+from models.sieve.sieve import Sieve
 import uuid
 import itertools
 from models.embedding.scalar_embedding import ScalarEmbedding
 from models.embedding.semantic_embedding import SemanticEmbedding
 import pickle
 from random import shuffle
+import scipy
 
 
 # Class to prepare learned data
@@ -14,7 +16,7 @@ class PrepareLearnData:
 
     all_tokens = {}
 
-    MAX_CLUSTER_SIZE = 7
+    MAX_CLUSTER_SIZE = 30
 
     MAX_ENTITIES_SEPARATE_SIZE = 50
 
@@ -22,10 +24,15 @@ class PrepareLearnData:
 
     scalar_embedding = None
 
+    sieve = None
+
     # Load embedding models
     def load_embeddings(self):
         self.semantic_embedding = SemanticEmbedding()
         self.scalar_embedding = ScalarEmbedding()
+
+        # Load sieve
+        self.sieve = Sieve()
 
     # Load all documents from DB and group it
     def load_documents(self):
@@ -41,7 +48,7 @@ class PrepareLearnData:
         # Group tokens by documents
         for token in tokens:
             if not (token.DocumentID in documents):
-                documents[token.DocumentID] = {'tokens': [], 'entities': {}, 'clusters': {}, 'entities_separate': [] }
+                documents[token.DocumentID] = {'tokens': [], 'entities': {}, 'clusters': {}, 'entities_separate': []}
             documents[token.DocumentID]['tokens'].append(token)
 
         # Group tokens of documents by entities
@@ -80,7 +87,10 @@ class PrepareLearnData:
                 entities_separate = entities_separate[:self.MAX_ENTITIES_SEPARATE_SIZE]
             documents[document_id]['entities_separate'] = entities_separate
 
-        self.documents = documents
+        keys = list(documents.keys())
+        keys = keys[:1800]
+        for key in keys:
+            self.documents[key] = documents[key]
 
         # Close DB session
         db_session.close()
@@ -115,35 +125,49 @@ class PrepareLearnData:
         # Start with the number 2
         i = 2
 
+        # Maximum length of combinations
+        max_comb_length = 30
+
+        # Maximum expected length of combination
+        max_expected_length = 200
+
         prev_comb = None
         all_combinations = []
 
         while is_in_range:
 
-            # Generate all combinations C(n=len(items), k=i)
-            comb = list(itertools.combinations(items, i))
+            if int(scipy.special.comb(len(items), i)) < max_expected_length:
 
-            # Loop through all elements inside generated elements
-            j = 0
-            while j < len(comb):
+                # Generate all combinations C(n=len(items), k=i)
+                comb = list(itertools.combinations(items, i))
+                shuffle(comb)
 
-                # Inner loop
-                # Try to merge with siblings
-                k = j
-                while k < len(comb):
-                    first, second = self.check_pair(comb[k], comb[j])
-                    if len(second) > 0:
-                        self.push_pair(first, second, all_combinations)
-                    k += 1
-                j += 1
+                # Cut comb list to omit memory overflow
+                if len(comb) > max_comb_length:
+                    comb = comb[:max_comb_length]
 
-            # If it is the first stage
-            # Than just write it to result list
-            if prev_comb is None:
-                for c in comb:
-                    self.push_pair((c[0],), (c[1],), all_combinations)
+                # Loop through all elements inside generated elements
+                j = 0
+                while j < len(comb):
 
-            prev_comb = comb
+                    # Inner loop
+                    # Try to merge with siblings
+                    k = j
+                    while k < len(comb):
+                        first, second = self.check_pair(comb[k], comb[j])
+                        if len(second) > 0:
+                            self.push_pair(first, second, all_combinations)
+                        k += 1
+                    j += 1
+
+                # If it is the first stage
+                # Than just write it to result list
+                if prev_comb is None:
+                    for c in comb:
+                        self.push_pair((c[0],), (c[1],), all_combinations)
+
+                prev_comb = comb
+
             i += 1
             is_in_range = i < len(items)
         return all_combinations
@@ -155,12 +179,36 @@ class PrepareLearnData:
             yield l[i:i + n]
 
     # Form combinations from items due to limits
-    def form_combinations_with_split(self, items):
+    def form_combinations_with_split(self, items, document, direct_speech_groups):
+        shuffle(items)
         chunks = list(self.chunks(items, self.MAX_CLUSTER_SIZE))
         result = []
         for chunk in chunks:
             combinations = self.form_combinations(chunk)
-            result.extend(combinations)
+
+            # Remove all combinations that can be resolved by the sieve
+            combinations_corrected = []
+
+            for comb in combinations:
+                is_combination_complex = True
+
+                # Loop trough all tokens inside both entities
+                # and apply sieve for them
+                for entity1_id in comb[0]:
+                    if not is_combination_complex:
+                        break
+
+                    for entity2_id in comb[1]:
+                        result_sieve = self.sieve.apply(
+                            [document['entities'][entity1_id], document['entities'][entity2_id]], direct_speech_groups,
+                            document['tokens'], {})
+                        if result_sieve is not None:
+                            is_combination_complex = False
+                            break
+
+                if is_combination_complex:
+                    combinations_corrected.append(comb)
+            result.extend(combinations_corrected)
         return result
 
     # Save items as a pickle file
@@ -168,7 +216,7 @@ class PrepareLearnData:
         shuffle(items)
         chunks = list(self.chunks(items, 30000))
         for idx, chunk in enumerate(chunks):
-            file = 'dataset_1/data-{0}.pkl'.format(idx)
+            file = 'dataset_1/data-{0}-{1}.pkl'.format(idx, chunk_counter)
             handle = open(file, 'wb')
             pickle.dump(chunk, handle, protocol=pickle.HIGHEST_PROTOCOL)
             handle.close()
@@ -191,23 +239,28 @@ class PrepareLearnData:
             self.scalar_embedding.evaluate_tfidf(self.documents[document_id]['tokens'])
             self.semantic_embedding.tokens = self.documents[document_id]['tokens']
 
+            direct_speech_groups = self.sieve.find_direct_speech(self.documents[document_id]['tokens'])
+
             # Retrieve clusters
             # Loop through all clusters and form different combinations of correct pairs
             clusters = self.documents[document_id]['clusters']
             for cluster_id in clusters:
                 items = clusters[cluster_id]
-                document_dataset['correct'].extend(self.form_combinations_with_split(items))
+                document_dataset['correct'].extend(
+                    self.form_combinations_with_split(items, self.documents[document_id],
+                                                      direct_speech_groups))
 
             # Form all incorrect combinations
             document_dataset['incorrect'] = self.form_combinations_with_split(
-                self.documents[document_id]['entities_separate'])
+                self.documents[document_id]['entities_separate'], self.documents[document_id],
+                direct_speech_groups)
 
             # Loop through different labeled datasets
             class_labels = {'correct': 1, 'incorrect': 0}
 
             # Set the similar width of correct and incorrect labels
-            if len(document_dataset['incorrect']) > len(document_dataset['correct']):
-                document_dataset['incorrect'] = document_dataset['incorrect'][:len(document_dataset['correct'])]
+            # if len(document_dataset['incorrect']) > 6 * len(document_dataset['correct']):
+            #     document_dataset['incorrect'] = document_dataset['incorrect'][:6 * len(document_dataset['correct'])]
 
             for label in document_dataset:
                 pairs = document_dataset[label]
@@ -219,8 +272,12 @@ class PrepareLearnData:
 
                     item = {'label': class_labels[label], 'semantic': semantic_matrix, 'scalar': scalar_matrix}
                     data_items.append(item)
-
-        self.save_items(data_items, chunk_counter)
+                    if len(data_items) > 500000:
+                        self.save_items(data_items, chunk_counter)
+                        chunk_counter += 1
+                        data_items = []
+        if len(data_items) > 0:
+            self.save_items(data_items, chunk_counter)
 
     def get_scalar_matrix_from_pair(self, pair_matrix):
         return self.scalar_embedding.matrix2vec(pair_matrix)

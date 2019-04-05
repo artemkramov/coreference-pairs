@@ -131,8 +131,8 @@ class CoreferenceModel:
         scalar_matrix = np.expand_dims(scalar_matrix, axis=2)
         scalar_matrix = np.expand_dims(scalar_matrix, axis=0)
 
-        prediction = self.model_neural.predict([semantic_matrix, scalar_matrix])
-        if prediction[0][0] > 0.98:
+        prediction = self.model_neural.predict_on_batch([semantic_matrix, scalar_matrix])
+        if prediction[0][0] > 0.9:
             return True
 
         return False
