@@ -13,6 +13,11 @@ import os
 from os import listdir
 from os.path import isfile, join
 import shutil
+from typing import List
+from models.searn.mention import Mention
+from models.searn.state import State
+from models.searn.policy import Policy, ReferencePolicy
+from models.searn.metric import BCubed
 
 
 # Class to perform compiling and training of model
@@ -265,9 +270,49 @@ class Training:
         print(model.summary())
         self.model = model
 
+    def train_searn(self):
+
+        # Load mentions from DB
+        folder = 'dataset_2'
+        config_training = self.config['TRAINING']
+        files = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
+
+        # Policy
+        policy = Policy(self.model)
+
+        # Metric to evaluate
+        metric = BCubed()
+        for filename in files:
+            handle = open(filename, 'rb')
+            documents: List[List[Mention]] = pickle.load(handle)
+            handle.close()
+            for document in documents:
+                state_initial = State(document)
+                state_last_gold = State(document, False)
+
+                clusters = []
+                for m in state_last_gold.mentions:
+                    clusters.append(m.cluster_id)
+                print(len(list(dict.fromkeys(clusters))))
+
+                clusters = []
+                for m in state_initial.mentions:
+                    clusters.append(m.cluster_id)
+                print(len(list(dict.fromkeys(clusters))))
+                exit(1)
+                policy.preprocess_document(document)
+                trajectory = state_initial.move_to_end_state(policy)
+                state_last_actual = trajectory[-1]
+                loss = metric.evaluate(state_last_gold, state_last_actual)
+                exit(1)
+
+
+
+
 
 if __name__ == "__main__":
     training = Training()
     # training.load_train_data()
     training.build_model()
-    training.train_model()
+    # training.train_model()
+    training.train_searn()

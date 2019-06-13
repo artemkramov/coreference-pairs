@@ -4,6 +4,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn import preprocessing
 from sklearn.exceptions import DataConversionWarning
 import warnings
+from ..searn.mention import Mention
+from typing import List
 
 warnings.filterwarnings(action='ignore', category=DataConversionWarning)
 
@@ -58,7 +60,7 @@ class ScalarEmbedding(BaseEmbedding):
         return matrix_normalized
 
     # Inherit empty parent method to extract appropriate scalar features
-    def pair2vec(self, pair_words):
+    def pair2vec(self, pair_words: List[Mention]):
         vector = []
 
         # Split array into two items
@@ -66,8 +68,8 @@ class ScalarEmbedding(BaseEmbedding):
         second_item = pair_words[1]
 
         # Detect head words of each item
-        first_item_head = first_item[self.get_head_word_index(first_item)]
-        second_item_head = second_item[self.get_head_word_index(second_item)]
+        first_item_head = first_item.tokens[self.get_head_word_index(first_item)]
+        second_item_head = second_item.tokens[self.get_head_word_index(second_item)]
 
         # Append coordinates with features such as a pronoun detection
         # and TF-IDF value
@@ -85,12 +87,12 @@ class ScalarEmbedding(BaseEmbedding):
         vector.append(is_second_item_dem)
 
         # Get count of words between entities
-        if first_item[0].WordOrder < second_item[0].WordOrder:
-            start_index = first_item[0].WordOrder
-            last_index = second_item[-1].WordOrder
+        if first_item.tokens[0].WordOrder < second_item.tokens[0].WordOrder:
+            start_index = first_item.tokens[0].WordOrder
+            last_index = second_item.tokens[-1].WordOrder
         else:
-            start_index = second_item[0].WordOrder
-            last_index = first_item[-1].WordOrder
+            start_index = second_item.tokens[0].WordOrder
+            last_index = first_item.tokens[-1].WordOrder
         vector.append(abs(last_index - start_index))
 
         # Get count of entities between entities
@@ -103,9 +105,9 @@ class ScalarEmbedding(BaseEmbedding):
 
         # Check if lemmatized versions of strings equal
         is_equal = True
-        if len(first_item) == len(second_item):
-            for idx, item in enumerate(first_item):
-                if item.Lemmatized != second_item[idx].Lemmatized:
+        if len(first_item.tokens) == len(second_item.tokens):
+            for idx, item in enumerate(first_item.tokens):
+                if item.Lemmatized != second_item.tokens[idx].Lemmatized:
                     is_equal = False
                     break
         vector.append(int(is_equal))
@@ -165,9 +167,9 @@ class ScalarEmbedding(BaseEmbedding):
 
     # Find head word index of the entity
     @staticmethod
-    def get_head_word_index(item):
+    def get_head_word_index(item: Mention):
         index = 0
-        for idx, token in enumerate(item):
+        for idx, token in enumerate(item.tokens):
             if token.IsHeadWord:
                 return idx
         return index

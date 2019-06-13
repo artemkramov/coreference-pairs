@@ -8,6 +8,8 @@ from models.embedding.semantic_embedding import SemanticEmbedding
 import pickle
 from random import shuffle
 import scipy
+from models.searn.mention import Mention
+from typing import List
 
 
 # Class to prepare learned data
@@ -51,49 +53,41 @@ class PrepareLearnData:
                 documents[token.DocumentID] = {'tokens': [], 'entities': {}, 'clusters': {}, 'entities_separate': []}
             documents[token.DocumentID]['tokens'].append(token)
 
+        document_mentions: List[List[Mention]] = []
+
         # Group tokens of documents by entities
         for document_id in documents:
 
-            entities = {}
-            clusters = {}
-            entities_separate = []
             document_tokens = documents[document_id]['tokens']
-            for token in document_tokens:
 
-                # Create entity group
+            mentions: List[Mention] = []
+            counter = 0
+
+            while counter < len(document_tokens):
+                token = document_tokens[counter]
+
                 if token.EntityID is None:
-                    entity_id = str(uuid.uuid4())
-                    entities[entity_id] = [token]
+                    mention = Mention([token])
+                    mention.is_entity = False
                 else:
-                    if not (token.EntityID in entities):
-                        entities[token.EntityID] = []
-                    entities[token.EntityID].append(token)
-                    if token.CoreferenceGroupID is None and (not (token.EntityID in entities_separate)):
-                        entities_separate.append(token.EntityID)
+                    current_entity_tokens = [token]
+                    while counter + 1 < len(document_tokens) and document_tokens[counter + 1].EntityID == token.EntityID:
+                        current_entity_tokens.append(document_tokens[counter + 1])
+                        counter += 1
+                    mention = Mention(current_entity_tokens)
+                    mention.is_entity = True
+                    if not (token.CoreferenceGroupID is None):
+                        mention.cluster_id = token.CoreferenceGroupID
 
-                # Create cluster groups
-                if not (token.CoreferenceGroupID is None):
-                    if not (token.CoreferenceGroupID in clusters):
-                        clusters[token.CoreferenceGroupID] = []
-                        if not (token.EntityID in entities_separate):
-                            entities_separate.append(token.EntityID)
-                    if not (token.EntityID in clusters[token.CoreferenceGroupID]):
-                        clusters[token.CoreferenceGroupID].append(token.EntityID)
+                mentions.append(mention)
+                counter += 1
 
-            documents[document_id]['entities'] = entities
-            documents[document_id]['clusters'] = clusters
-            entities_separate.reverse()
-            if len(entities_separate) > self.MAX_ENTITIES_SEPARATE_SIZE:
-                entities_separate = entities_separate[:self.MAX_ENTITIES_SEPARATE_SIZE]
-            documents[document_id]['entities_separate'] = entities_separate
-
-        keys = list(documents.keys())
-        keys = keys[:1800]
-        for key in keys:
-            self.documents[key] = documents[key]
+            document_mentions.append(mentions)
 
         # Close DB session
         db_session.close()
+
+        self.save_items(document_mentions)
 
     # Split two tuples into two tuples
     # that don't have intersection part
@@ -212,11 +206,11 @@ class PrepareLearnData:
         return result
 
     # Save items as a pickle file
-    def save_items(self, items, chunk_counter):
+    def save_items(self, items, chunk_counter=0):
         shuffle(items)
         chunks = list(self.chunks(items, 30000))
         for idx, chunk in enumerate(chunks):
-            file = 'dataset_1/data-{0}-{1}.pkl'.format(idx, chunk_counter)
+            file = 'dataset_2/data-{0}-{1}.pkl'.format(idx, chunk_counter)
             handle = open(file, 'wb')
             pickle.dump(chunk, handle, protocol=pickle.HIGHEST_PROTOCOL)
             handle.close()
@@ -324,5 +318,5 @@ class PrepareLearnData:
 if __name__ == "__main__":
     model = PrepareLearnData()
     model.load_documents()
-    model.load_embeddings()
-    model.form_train_pairs()
+    # model.load_embeddings()
+    # model.form_train_pairs()
