@@ -4,11 +4,11 @@ import numpy as np
 from ..embedding.semantic_embedding import SemanticEmbedding
 from ..embedding.scalar_embedding import ScalarEmbedding
 from ..sieve.sieve import Sieve
+from .action import PassAction, MergeAction
 
 
 # Class which defines network policy
 class Policy:
-
     # Neural network model (binary classifier)
     model = None
 
@@ -38,6 +38,17 @@ class Policy:
 
     # Evaluate ability for cluster merging
     def apply(self, cluster_mention: List[Mention], cluster_antecedent: List[Mention]):
+
+        matrices = self.clusters_to_matrices(cluster_mention, cluster_antecedent)
+
+        # Run neural network to predict
+        prediction = self.model.predict_on_batch([matrices['semantic'], matrices['scalar']])[0][0]
+        if prediction > self.PROB_THRESHOLD:
+            return True
+        return False
+
+    # Transform pair of clusters to common matrix
+    def clusters_to_matrices(self, cluster_mention: List[Mention], cluster_antecedent: List[Mention]):
         # Form pair "mention"-"antecedent"
         pair = [cluster_mention, cluster_antecedent]
 
@@ -51,12 +62,10 @@ class Policy:
         semantic_matrix = np.expand_dims(semantic_matrix, axis=0)
         scalar_matrix = np.expand_dims(scalar_matrix, axis=2)
         scalar_matrix = np.expand_dims(scalar_matrix, axis=0)
-
-        # Run neural network to predict
-        prediction = self.model.predict_on_batch([semantic_matrix, scalar_matrix])[0][0]
-        if prediction > self.PROB_THRESHOLD:
-            return True
-        return False
+        return {
+            'semantic': semantic_matrix,
+            'scalar': scalar_matrix
+        }
 
     # Preprocess document to fit features of embeddings
     def preprocess_document(self, mentions: List[Mention]):
@@ -106,10 +115,13 @@ class Policy:
         return self.semantic_embedding.matrix2vec(matrix)
 
 
-class ReferencePolicy(Policy):
+class ReferencePolicy:
 
-    def __init__(self, _model):
-        pass
-
-    def apply(self, cluster1, cluster2):
-        pass
+    @staticmethod
+    def apply(state: 'State', state_gold: 'State'):
+        if (state.current_mention_idx < len(
+                state.mentions)) and state.current_mention_idx > state.current_antecedent_idx:
+            if state_gold.mentions[state.current_mention_idx].cluster_id == \
+                    state_gold.mentions[state.current_antecedent_idx].cluster_id:
+                return MergeAction()
+        return PassAction()

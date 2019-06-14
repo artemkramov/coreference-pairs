@@ -1,5 +1,6 @@
 from ..db.word import DbWord
 from typing import List
+from copy import copy
 
 
 # Class to describe mention

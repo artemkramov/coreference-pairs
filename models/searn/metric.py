@@ -16,17 +16,16 @@ class BCubed(Metric):
     def evaluate(self, state1, state2):
         cdict = self.state_to_dict(state1)
         ldict = self.state_to_dict(state2)
-        pass
+        return self.f_score(cdict, ldict)
 
     @staticmethod
     def state_to_dict(state: 'State'):
         ldict = {}
         for idx, mention in enumerate(state.mentions):
-            if not (mention.cluster_id in ldict):
-                ldict[mention.cluster_id] = []
-            ldict[mention.cluster_id].append(idx)
+            ldict[idx] = [mention.cluster_id]
+        for key in ldict:
+            ldict[key] = set(ldict[key])
         return ldict
-
 
     @staticmethod
     def mult_precision(el1, el2, cdict, ldict):

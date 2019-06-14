@@ -18,6 +18,10 @@ from models.searn.mention import Mention
 from models.searn.state import State
 from models.searn.policy import Policy, ReferencePolicy
 from models.searn.metric import BCubed
+from models.searn.action import MergeAction, PassAction
+import copy
+import tensorflow as tf
+import keras.backend as K
 
 
 # Class to perform compiling and training of model
@@ -33,6 +37,8 @@ class Training:
 
     # Folder to save models during training
     folder_models = "bin"
+
+    train_losses = []
 
     def __init__(self):
         # Load configuration data
@@ -212,7 +218,8 @@ class Training:
         # Also generate output vectors
         x_semantic = [x['semantic'] for x in mini_batch]
         x_scalar = [x['scalar'] for x in mini_batch]
-        y = [x['label'] for x in mini_batch]
+        y = [x['id'] for x in mini_batch]
+        # y = np.array(y)
 
         # If it is the training mini-batch than pass batch with changing of weights
         # Else just pass mini-batch and retrieve metrics
@@ -221,7 +228,8 @@ class Training:
                 metrics = self.model.train_on_batch([x_semantic, x_scalar], y)
             else:
                 metrics = self.model.test_on_batch([x_semantic, x_scalar], y)
-        except ValueError:
+        except ValueError as e:
+            print(e)
             metrics = []
         return metrics
 
@@ -233,6 +241,15 @@ class Training:
             input_matrix)
         cnn = GlobalMaxPooling2D(data_format='channels_last')(cnn)
         return cnn, input_matrix
+
+    def loss_function(self, y_true, y_pred):
+        y_pred = tf.Print(y_pred, [y_pred], "Inside loss function")
+        tf_session = K.get_session()
+        indices = y_true.eval()
+
+
+        #return tf.convert_to_tensor(np.array([[1.0]]))
+        return K.mean(K.binary_crossentropy(y_pred, y_true), axis=-1)
 
     # Build model due to the configuration parameters
     def build_model(self):
@@ -265,7 +282,7 @@ class Training:
                                        momentum=float(config_network['sgd_momentum']),
                                        decay=float(config_network['sgd_decay']),
                                        nesterov=bool(int(config_network['sgd_nesterov'])))
-        model.compile(optimizer=optimizer, loss=config_network['loss'], metrics=['accuracy'])
+        model.compile(optimizer=optimizer, loss=self.loss_function, metrics=[])
         plot_model(model, to_file='debug/model.png', show_shapes=True)
         print(model.summary())
         self.model = model
@@ -277,37 +294,96 @@ class Training:
         config_training = self.config['TRAINING']
         files = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
 
-        # Policy
+        # Policy to learn
         policy = Policy(self.model)
+
+        # Reference policy
+        policy_reference = ReferencePolicy()
 
         # Metric to evaluate
         metric = BCubed()
+
+        # Possible actions
+        actions = [MergeAction(), PassAction()]
         for filename in files:
-            handle = open(filename, 'rb')
-            documents: List[List[Mention]] = pickle.load(handle)
+            # handle = open(filename, 'rb')
+            # documents: List[List[Mention]] = pickle.load(handle)
+            # handle.close()
+            #
+            # training_set = []
+            #
+            # for document in documents:
+            #     state_initial = State(document)
+            #     state_last_gold = State(document, False)
+
+                # clusters = []
+                # for m in state_last_gold.mentions:
+                #     clusters.append(m.cluster_id)
+                # print(len(list(dict.fromkeys(clusters))))
+
+                # policy.preprocess_document(document)
+                # trajectory = state_initial.move_to_end_state(policy)
+                # counter = 1
+                # for state in trajectory:
+                #     losses = []
+                #     print("State from trajectory: {0}, len={1}".format(counter, len(trajectory)))
+                #     counter += 1
+                #     for action in actions:
+                #         state_one_step = state.move(policy, action)
+                #         if not state_one_step:
+                #             state_end = copy.deepcopy(state)
+                #         else:
+                #             state_end = state_one_step.move_to_end_state(policy_reference, state_last_gold)[-1]
+                #         losses.append(metric.evaluate(state_end, state_last_gold))
+                #
+                #     training_set.append({
+                #         'losses': losses,
+                #         'state': state
+                #     })
+                #     if counter > 25:
+                #         break
+                # print(len(training_set))
+                # file = 'tmp/test.pkl'
+                # handle = open(file, 'wb')
+                # pickle.dump(training_set, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                # handle.close()
+                # exit(1)
+
+            self.train_losses = []
+
+            handle = open('tmp/test.pkl', 'rb')
+            training_set = pickle.load(handle)
             handle.close()
-            for document in documents:
-                state_initial = State(document)
-                state_last_gold = State(document, False)
 
-                clusters = []
-                for m in state_last_gold.mentions:
-                    clusters.append(m.cluster_id)
-                print(len(list(dict.fromkeys(clusters))))
+            batches = {}
+            for idx, training_example in enumerate(training_set):
+                expected = training_example['losses']
+                state = training_example['state']
+                policy.preprocess_document(state.tokens)
+                x = state.get_matrices(policy)
+                x['semantic'] = np.squeeze(x['semantic'], axis=0)
+                x['scalar'] = np.squeeze(x['scalar'], axis=0)
+                x['id'] = idx
+                self.train_losses.append(expected)
+                variable_length = x['scalar'].shape[1]
+                if not (variable_length in batches):
+                    batches[variable_length] = []
+                batches[variable_length].append(x)
 
-                clusters = []
-                for m in state_initial.mentions:
-                    clusters.append(m.cluster_id)
-                print(len(list(dict.fromkeys(clusters))))
-                exit(1)
-                policy.preprocess_document(document)
-                trajectory = state_initial.move_to_end_state(policy)
-                state_last_actual = trajectory[-1]
-                loss = metric.evaluate(state_last_gold, state_last_actual)
-                exit(1)
+            # Split batches to mini-batches
+            mini_batches = []
+            for key in batches:
+                # Split batches to mini-batches
+                shuffle(batches[key])
+                chunks = self.chunks(batches[key], int(config_training['batch_size']))
+                mini_batches.extend(chunks)
 
+            shuffle(mini_batches)
 
-
+            # Process training mini-batches
+            for mini_batch in mini_batches:
+                metrics = self.process_mini_batch(mini_batch, 'train')
+                print(metrics)
 
 
 if __name__ == "__main__":
