@@ -118,10 +118,9 @@ class Policy:
 class ReferencePolicy:
 
     @staticmethod
-    def apply(state: 'State', state_gold: 'State'):
+    def apply(state: 'State', clusters_gold):
         if (state.current_mention_idx < len(
-                state.mentions)) and state.current_mention_idx > state.current_antecedent_idx:
-            if state_gold.mentions[state.current_mention_idx].cluster_id == \
-                    state_gold.mentions[state.current_antecedent_idx].cluster_id:
+                clusters_gold)) and state.current_mention_idx > state.current_antecedent_idx:
+            if clusters_gold[state.current_mention_idx] == clusters_gold[state.current_antecedent_idx]:
                 return MergeAction()
         return PassAction()

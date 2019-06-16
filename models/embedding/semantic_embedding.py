@@ -87,7 +87,10 @@ class SemanticEmbedding(BaseEmbedding):
                 # Stop if it is the start of array
                 if i < 0:
                     break
-                current_token = self.tokens[i]
+                try:
+                    current_token = self.tokens[i]
+                except IndexError:
+                    pass
                 # Check if current token isn't a punctuation symbol
                 if current_token.PartOfSpeech != PartOfSpeech.PUNCT:
                     prev_tokens.append(current_token)

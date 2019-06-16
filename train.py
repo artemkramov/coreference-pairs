@@ -19,6 +19,7 @@ from models.searn.state import State
 from models.searn.policy import Policy, ReferencePolicy
 from models.searn.metric import BCubed
 from models.searn.action import MergeAction, PassAction
+from models.searn.agent import Agent
 import copy
 from tensorflow.python import debug as tf_debug
 import tensorflow as tf
@@ -42,7 +43,7 @@ class Training:
     # Folder to save models during training
     folder_models = "bin"
 
-    train_losses = K.variable([435])
+    train_losses = K.variable([1, 345, 345])
 
     def __init__(self):
         # Load configuration data
@@ -337,61 +338,34 @@ class Training:
                 # documents = documents[:1]
                 handle.close()
 
-                training_set = []
-
                 # Calculate separator index to divide documents into 2 parts
-                separator_index = len(documents) - int(training_split * len(documents)) - 1
+                separator_index = int(training_split * len(documents)) + 1
                 # print(separator_index)
 
-                for document_id, document in enumerate(documents[:separator_index]):
+                training_set = []
+
+                for document_id, document in enumerate(documents[:1]):
 
                     start = time.clock()
+                    agent = Agent(document)
+                    agent.set_gold_state(document)
 
-                    # Set initial state and end state
-                    state_initial = State(document)
-                    state_last_gold = State(document, False)
-
-                    clusters = []
-                    for m in state_last_gold.mentions:
-                        clusters.append(m.cluster_id)
-                    print(len(list(dict.fromkeys(clusters))))
+                    # clusters = []
+                    # for m in state_last_gold.mentions:
+                    #     clusters.append(m.cluster_id)
+                    # print(len(list(dict.fromkeys(clusters))))
 
                     print("Process document {0} from {1}".format(document_id, separator_index))
 
                     policy.preprocess_document(document)
-                    trajectory = state_initial.move_to_end_state(policy)
-                    counter = 1
+                    start = time.clock()
+                    agent.move_to_end_state(policy)
 
-                    # Evaluate loss function for all state in trajectory besides the last state
-                    for state in trajectory[:-1]:
-                        losses = []
-                        print("State from trajectory: {0}, len={1}".format(counter, len(trajectory)))
-                        counter += 1
+                    # print("Time to count: {0}".format(time.clock() - start))
 
-                        # Apply each action to the current state
-                        for action in actions:
+                    training_set.extend(agent.form_training_set(policy, actions, policy_reference, metric))
 
-                            # Apply current action (perform one step)
-                            state_one_step = state.move(policy, action)
-
-                            # If we can't move more than make deep copy of the state
-                            # Else continue to move with the reference policy till the end state
-                            if not state_one_step:
-                                state_end = copy.deepcopy(state)
-                            else:
-                                state_end = state_one_step.move_to_end_state(policy_reference, state_last_gold)[-1]
-
-                            # Evaluate loss function by computing corresponding metric between gold state
-                            #  and actual end state
-                            losses.append(metric.evaluate(state_end, state_last_gold))
-
-                        # Append state with corresponding losses to the training set
-                        training_set.append({
-                            'losses': losses,
-                            'state': state
-                        })
-
-                    print("Time for document: {0}".format(time.clock() - start))
+                    # print("Time for document: {0}".format(time.clock() - start))
 
                 # Prepare list of losses to collect losses for training
                 losses_train = []
@@ -411,11 +385,11 @@ class Training:
                     state = training_example['state']
 
                     # Preprocess documents with the policy to evaluate embeddings
-                    policy.preprocess_document(state.tokens)
+                    policy.preprocess_document(training_example['tokens'])
 
                     # Get matrix of the state and remove extra dimension
                     # which corresponds to the length of the batch
-                    x = state.get_matrices(policy)
+                    x = Agent.get_matrices(policy, state, training_example['mentions'])
                     x['semantic'] = np.squeeze(x['semantic'], axis=0)
                     x['scalar'] = np.squeeze(x['scalar'], axis=0)
 
@@ -432,7 +406,7 @@ class Training:
 
                 # Convert list of training losses to a tensor model
                 # and recompile model with changed train losses
-                self.train_losses = tf.constant(losses_train)
+                self.train_losses = tf.constant(losses_train, dtype=tf.float32)
                 self.recompile_model()
 
                 # Split batches to mini-batches

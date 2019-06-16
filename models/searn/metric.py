@@ -21,8 +21,8 @@ class BCubed(Metric):
     @staticmethod
     def state_to_dict(state: 'State'):
         ldict = {}
-        for idx, mention in enumerate(state.mentions):
-            ldict[idx] = [mention.cluster_id]
+        for idx, cluster_id in enumerate(state.clusters):
+            ldict[idx] = [cluster_id]
         for key in ldict:
             ldict[key] = set(ldict[key])
         return ldict

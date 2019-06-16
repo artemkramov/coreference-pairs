@@ -18,13 +18,12 @@ class MergeAction(Action):
     name = 'merge'
 
     def run(self, state: 'State') -> 'State':
+
         # Init new state with deep copy
         state_new = copy.deepcopy(state)
-
         # Get current mention and its antecedent and merge them into one cluster
-        mention = state_new.mentions[state_new.current_mention_idx]
-        antecedent = state_new.mentions[state_new.current_antecedent_idx]
-        mention.cluster_id = antecedent.cluster_id
+        state_new.clusters[state_new.current_mention_idx] = state_new.clusters[state_new.current_antecedent_idx]
+
         return state_new
 
 
