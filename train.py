@@ -253,8 +253,10 @@ class Training:
         losses_current = tf.squeeze(losses_current, [1])
         y_pred_negative = tf.map_fn(lambda x: (1 - x), y_pred, dtype=tf.float32)
         y_pred_concat = tf.concat([y_pred, y_pred_negative], 1)
+        t = K.sum(y_pred_concat * losses_current)
+        t = K.print_tensor(t, message="t: ")
 
-        return K.mean(K.sum(y_pred_concat * losses_current))
+        return K.mean(K.sum(y_pred_concat * losses_current, axis=1))
         # return tf.convert_to_tensor(np.array([[1.0]]))
         # return K.mean(K.binary_crossentropy(y_pred, y_true), axis=-1)
 
@@ -320,6 +322,9 @@ class Training:
         # Get total number of epochs
         epochs = int(config_training['epochs'])
 
+        # Percentage of documents for training purpose
+        training_split = float(config_training['training_split'])
+
         # Loop through each epoch
         for epoch in range(0, epochs):
             print('Epoch {}/{}'.format(epoch, epochs))
@@ -329,12 +334,16 @@ class Training:
                 # Read documents
                 handle = open(filename, 'rb')
                 documents: List[List[Mention]] = pickle.load(handle)
-                documents = documents[:1]
+                # documents = documents[:1]
                 handle.close()
 
                 training_set = []
 
-                for document in documents:
+                # Calculate separator index to divide documents into 2 parts
+                separator_index = len(documents) - int(training_split * len(documents)) - 1
+                # print(separator_index)
+
+                for document_id, document in enumerate(documents[:separator_index]):
 
                     start = time.clock()
 
@@ -347,48 +356,83 @@ class Training:
                         clusters.append(m.cluster_id)
                     print(len(list(dict.fromkeys(clusters))))
 
+                    print("Process document {0} from {1}".format(document_id, separator_index))
+
                     policy.preprocess_document(document)
                     trajectory = state_initial.move_to_end_state(policy)
                     counter = 1
-                    for state in trajectory:
+
+                    # Evaluate loss function for all state in trajectory besides the last state
+                    for state in trajectory[:-1]:
                         losses = []
                         print("State from trajectory: {0}, len={1}".format(counter, len(trajectory)))
                         counter += 1
+
+                        # Apply each action to the current state
                         for action in actions:
+
+                            # Apply current action (perform one step)
                             state_one_step = state.move(policy, action)
+
+                            # If we can't move more than make deep copy of the state
+                            # Else continue to move with the reference policy till the end state
                             if not state_one_step:
                                 state_end = copy.deepcopy(state)
                             else:
                                 state_end = state_one_step.move_to_end_state(policy_reference, state_last_gold)[-1]
+
+                            # Evaluate loss function by computing corresponding metric between gold state
+                            #  and actual end state
                             losses.append(metric.evaluate(state_end, state_last_gold))
 
+                        # Append state with corresponding losses to the training set
                         training_set.append({
                             'losses': losses,
                             'state': state
                         })
+
                     print("Time for document: {0}".format(time.clock() - start))
 
-                losses = []
+                # Prepare list of losses to collect losses for training
+                losses_train = []
 
+                # Dictionary of batches
+                # We will group batches by the size
                 batches = {}
 
                 start = time.clock()
                 print("Run training process, examples: {0}".format(len(training_set)))
+
+                # Loop through collected training set
                 for idx, training_example in enumerate(training_set):
+
+                    # Fetch losses and corresponding state
                     expected = training_example['losses']
                     state = training_example['state']
+
+                    # Preprocess documents with the policy to evaluate embeddings
                     policy.preprocess_document(state.tokens)
+
+                    # Get matrix of the state and remove extra dimension
+                    # which corresponds to the length of the batch
                     x = state.get_matrices(policy)
                     x['semantic'] = np.squeeze(x['semantic'], axis=0)
                     x['scalar'] = np.squeeze(x['scalar'], axis=0)
+
+                    # Set order number of the example
+                    # It will be used to match the state with computed losses after a shuffle
                     x['id'] = idx
-                    losses.append(expected)
+                    losses_train.append(expected)
+
+                    # Group examples by the length
                     variable_length = x['scalar'].shape[1]
                     if not (variable_length in batches):
                         batches[variable_length] = []
                     batches[variable_length].append(x)
 
-                self.train_losses = tf.constant(losses)
+                # Convert list of training losses to a tensor model
+                # and recompile model with changed train losses
+                self.train_losses = tf.constant(losses_train)
                 self.recompile_model()
 
                 # Split batches to mini-batches
@@ -406,6 +450,7 @@ class Training:
                     metrics = self.process_mini_batch(mini_batch, 'train')
                     print("Metrics: {0}".format(metrics))
 
+                # Save model
                 self.save_model(epoch)
 
                 print("Time for training: {0}".format(time.clock() - start))

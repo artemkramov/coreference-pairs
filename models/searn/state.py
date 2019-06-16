@@ -23,14 +23,10 @@ class State:
 
     # From input matrices to compute
     def get_matrices(self, policy):
-        try:
-            # Get current mention
-            mention = self.mentions[self.current_mention_idx]
-        except IndexError:
-            pass
-            print(self.current_mention_idx)
-            print(len(self.mentions))
-            exit(1)
+
+        # Get current mention
+        mention = self.mentions[self.current_mention_idx]
+
         # Get current antecedent
         antecedent = self.mentions[self.current_antecedent_idx]
 
