@@ -6,6 +6,7 @@ from .state import State
 import uuid
 import copy
 import time
+import os
 
 
 class Agent:
@@ -31,6 +32,47 @@ class Agent:
         cluster_antecedent = state_current.get_cluster_of_mention(state_current.current_antecedent_idx, mentions)
 
         return policy.clusters_to_matrices(cluster_mention, cluster_antecedent)
+
+    def state_to_conll(self, state, document_id, offset=0):
+        document_id = str(document_id)
+        header = ["#begin document ({0});".format(document_id), "part 000"]
+        lines = [' '.join(header)]
+        entity_counter = offset
+        groups = {}
+        c = []
+        counter = 0
+        number = 0
+        for cluster_id in state.clusters:
+            if len(cluster_id) > 0:
+                if not (cluster_id in groups):
+                    groups[cluster_id] = counter
+                    number = counter
+                    counter += 1
+                else:
+                    number = groups[cluster_id]
+            else:
+                number = counter
+                counter += 1
+            c.append(number)
+
+        for mention_id, mention in enumerate(self.tokens):
+            line = [document_id, '-']
+            for idx, token in enumerate(mention.tokens):
+                line_format = '-'
+                if mention.is_entity:
+                    if idx == 0:
+                        entity_counter += 1
+                    if len(mention.tokens) == 1:
+                        line_format = '({0})'
+                    else:
+                        if idx == 0:
+                            line_format = '({0}'
+                        if idx == len(mention.tokens) - 1:
+                            line_format = '{0})'
+
+                    line[1] = line_format.format(c[entity_counter - 1])
+                lines.append(' '.join(line))
+        pass
 
     def form_training_set(self, policy, actions, policy_reference, metric):
 
@@ -82,7 +124,7 @@ class Agent:
 
                 # Evaluate loss function by computing corresponding metric between gold state
                 #  and actual end state
-                losses.append(metric.evaluate(state_end, self.state_gold))
+                losses.append(1 - metric.evaluate(state_end, self.state_gold))
 
             # Append state with corresponding losses to the training set
             training_set.append({

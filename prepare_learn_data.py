@@ -10,6 +10,41 @@ from random import shuffle
 import scipy
 from models.searn.mention import Mention
 from typing import List
+import json
+import dill
+
+
+class MentionWeb:
+
+    # Tokens of the entity
+    tokens = []
+
+    # ID of cluster
+    cluster_id: str = ""
+
+    # Check if it is an entity
+    is_entity: bool = False
+
+    def __init__(self, _tokens):
+        self.tokens = _tokens.copy()
+
+
+class DbWordWeb:
+
+    ID = 0
+    RawText = ""
+    DocumentID = ""
+    WordOrder = ""
+    PartOfSpeech = ""
+    Lemmatized = ""
+    IsPlural = ""
+    IsProperName = ""
+    IsHeadWord = ""
+    Gender = ""
+    EntityID = ""
+    RawTagString = ""
+    CoreferenceGroupID = ""
+    RemoteIPAddress = ""
 
 
 # Class to prepare learned data
@@ -51,30 +86,38 @@ class PrepareLearnData:
         for token in tokens:
             if not (token.DocumentID in documents):
                 documents[token.DocumentID] = {'tokens': [], 'entities': {}, 'clusters': {}, 'entities_separate': []}
-            documents[token.DocumentID]['tokens'].append(token)
+            token_web = DbWordWeb()
+            properties = token.__dict__
+            properties.pop('_sa_instance_state', None)
 
-        document_mentions: List[List[Mention]] = []
+            for key in properties:
+                setattr(token_web, key, properties[key])
+
+            documents[token.DocumentID]['tokens'].append(token_web)
+            # documents[token.DocumentID]['tokens'].append(token)
+
+        document_mentions: List[List[MentionWeb]] = []
 
         # Group tokens of documents by entities
         for document_id in documents:
 
             document_tokens = documents[document_id]['tokens']
 
-            mentions: List[Mention] = []
+            mentions: List[MentionWeb] = []
             counter = 0
 
             while counter < len(document_tokens):
                 token = document_tokens[counter]
 
                 if token.EntityID is None:
-                    mention = Mention([token])
+                    mention = MentionWeb([token])
                     mention.is_entity = False
                 else:
                     current_entity_tokens = [token]
                     while counter + 1 < len(document_tokens) and document_tokens[counter + 1].EntityID == token.EntityID:
                         current_entity_tokens.append(document_tokens[counter + 1])
                         counter += 1
-                    mention = Mention(current_entity_tokens)
+                    mention = MentionWeb(current_entity_tokens)
                     mention.is_entity = True
                     if not (token.CoreferenceGroupID is None):
                         mention.cluster_id = token.CoreferenceGroupID
@@ -210,9 +253,9 @@ class PrepareLearnData:
         shuffle(items)
         chunks = list(self.chunks(items, 30000))
         for idx, chunk in enumerate(chunks):
-            file = 'dataset_2/data-{0}-{1}.pkl'.format(idx, chunk_counter)
+            file = 'dataset_3/data-web-{0}-{1}.pkl'.format(idx, chunk_counter)
             handle = open(file, 'wb')
-            pickle.dump(chunk, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            dill.dump(chunk, handle, protocol=dill.HIGHEST_PROTOCOL)
             handle.close()
             print('Save chunk %s, len=%s' % (chunk_counter, len(chunk)))
 

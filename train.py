@@ -25,6 +25,9 @@ from tensorflow.python import debug as tf_debug
 import tensorflow as tf
 import keras.backend as K
 import time
+from statistics import mean
+from keras.models import model_from_json
+from progressbar import ProgressBar, Percentage, Bar
 
 # keras.backend.set_session(tf_debug.LocalCLIDebugWrapperSession(tf.Session()))
 
@@ -248,43 +251,55 @@ class Training:
     def loss_function(self, y_true, y_pred):
 
         y_true_int = tf.cast(y_true, dtype=tf.int32)
-        # y_true_int = K.print_tensor(y_true_int, message="y_true_int")
+        # y_pred = K.print_tensor(y_pred, message="y_pred")
         losses_current = tf.gather(self.train_losses, y_true_int)
-        self.train_losses = K.print_tensor(self.train_losses, message="losses_current")
+        # self.train_losses = K.print_tensor(self.train_losses, message="losses_current")
         losses_current = tf.squeeze(losses_current, [1])
         y_pred_negative = tf.map_fn(lambda x: (1 - x), y_pred, dtype=tf.float32)
         y_pred_concat = tf.concat([y_pred, y_pred_negative], 1)
-        t = K.sum(y_pred_concat * losses_current)
-        t = K.print_tensor(t, message="t: ")
+        # t = K.sum(y_pred_concat * losses_current)
+        # t = K.print_tensor(t, message="t: ")
 
         return K.mean(K.sum(y_pred_concat * losses_current, axis=1))
         # return tf.convert_to_tensor(np.array([[1.0]]))
         # return K.mean(K.binary_crossentropy(y_pred, y_true), axis=-1)
 
     # Build model due to the configuration parameters
-    def build_model(self):
-        config_network = self.config['NETWORK']
-        cnn_embedding, input_semantic = self.build_cnn(int(config_network['semantic_dimension']),
-                                                       int(config_network['filter_size']))
-        cnn_scalar, input_scalar = self.build_cnn(int(config_network['scalar_dimension']),
-                                                  int(config_network['filter_size']))
-        classifier = keras.layers.concatenate([cnn_embedding, cnn_scalar])
-        classifier = Dense(int(config_network['hidden_layer_units']), activation="relu")(classifier)
+    def build_model(self, epoch_number=None):
+        if epoch_number is None:
+            config_network = self.config['NETWORK']
+            cnn_embedding, input_semantic = self.build_cnn(int(config_network['semantic_dimension']),
+                                                           int(config_network['filter_size']))
+            cnn_scalar, input_scalar = self.build_cnn(int(config_network['scalar_dimension']),
+                                                      int(config_network['filter_size']))
+            classifier = keras.layers.concatenate([cnn_embedding, cnn_scalar])
+            classifier = Dense(int(config_network['hidden_layer_units']), activation="relu")(classifier)
 
-        # Add configurable dropout layer
-        classifier = Dropout(float(config_network['dropout_rate']))(classifier)
+            # Add configurable dropout layer
+            classifier = Dropout(float(config_network['dropout_rate']))(classifier)
 
-        # Load regularizer function to avoid overfitting
-        kernel_regularizer_value = float(config_network['kernel_regularizer_value'])
-        kernel_regularizer = None
-        if config_network['kernel_regularizer'] == 'l1':
-            kernel_regularizer = regularizers.l1(kernel_regularizer_value)
-        if config_network['kernel_regularizer'] == 'l2':
-            kernel_regularizer = regularizers.l2(kernel_regularizer_value)
+            # Load regularizer function to avoid overfitting
+            kernel_regularizer_value = float(config_network['kernel_regularizer_value'])
+            kernel_regularizer = None
+            if config_network['kernel_regularizer'] == 'l1':
+                kernel_regularizer = regularizers.l1(kernel_regularizer_value)
+            if config_network['kernel_regularizer'] == 'l2':
+                kernel_regularizer = regularizers.l2(kernel_regularizer_value)
 
-        classifier = Dense(1, activation="sigmoid", kernel_regularizer=kernel_regularizer)(classifier)
-        model = Model(inputs=[input_semantic, input_scalar], outputs=[classifier])
-
+            classifier = Dense(1, activation="sigmoid", kernel_regularizer=kernel_regularizer)(classifier)
+            model = Model(inputs=[input_semantic, input_scalar], outputs=[classifier])
+        else:
+            subfolder = join(self.folder_models, str(epoch_number))
+            # Prepare filenames of the model
+            filename = self.filename_template.format(epoch_number)
+            filename_json = join(subfolder, filename + ".json")
+            filename_weights = join(subfolder, filename + ".h5")
+            json_file = open(filename_json, 'r')
+            loaded_model_json = json_file.read()
+            json_file.close()
+            model = model_from_json(loaded_model_json)
+            model.load_weights(filename_weights)
+            print("Model is loaded")
         self.model = model
 
     def recompile_model(self):
@@ -301,7 +316,7 @@ class Training:
         plot_model(self.model, to_file='debug/model.png', show_shapes=True)
         print(self.model.summary())
 
-    def train_searn(self):
+    def train_searn(self, epoch_number=None):
 
         # Load mentions from DB
         folder = 'dataset_2'
@@ -330,6 +345,11 @@ class Training:
         for epoch in range(0, epochs):
             print('Epoch {}/{}'.format(epoch, epochs))
 
+            total_loss = []
+
+            if (not (epoch_number is None)) and epoch_number >= epoch:
+                continue
+
             for filename in files:
 
                 # Read documents
@@ -344,7 +364,10 @@ class Training:
 
                 training_set = []
 
-                for document_id, document in enumerate(documents[:1]):
+                pbar = ProgressBar(widgets=[Percentage(), Bar('>')], maxval=separator_index)
+                pbar.start()
+
+                for document_id, document in enumerate(documents[:separator_index]):
 
                     start = time.clock()
                     agent = Agent(document)
@@ -355,7 +378,7 @@ class Training:
                     #     clusters.append(m.cluster_id)
                     # print(len(list(dict.fromkeys(clusters))))
 
-                    print("Process document {0} from {1}".format(document_id, separator_index))
+                    # print("Process document {0} from {1}".format(document_id, separator_index))
 
                     policy.preprocess_document(document)
                     start = time.clock()
@@ -364,8 +387,11 @@ class Training:
                     # print("Time to count: {0}".format(time.clock() - start))
 
                     training_set.extend(agent.form_training_set(policy, actions, policy_reference, metric))
+                    pbar.update(document_id)
 
                     # print("Time for document: {0}".format(time.clock() - start))
+
+                pbar.finish()
 
                 # Prepare list of losses to collect losses for training
                 losses_train = []
@@ -422,18 +448,24 @@ class Training:
                 # Process training mini-batches
                 for mini_batch in mini_batches:
                     metrics = self.process_mini_batch(mini_batch, 'train')
-                    print("Metrics: {0}".format(metrics))
+                    total_loss.append(metrics)
+                    # print("Metrics: {0}".format(metrics))
 
                 # Save model
                 self.save_model(epoch)
 
-                print("Time for training: {0}".format(time.clock() - start))
+                total_loss_mean = sum(total_loss) / float(len(total_loss))
+
+                print("Loss for epoch {0}: {1}".format(epoch, total_loss_mean))
+
+                # print("Time for training: {0}".format(time.clock() - start))
 
 
 if __name__ == "__main__":
 
+    epoch_start = 1
     training = Training()
     # training.load_train_data()
-    training.build_model()
+    training.build_model(epoch_start)
     # training.train_model()
-    training.train_searn()
+    training.train_searn(epoch_start)
