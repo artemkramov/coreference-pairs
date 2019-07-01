@@ -1,6 +1,6 @@
-import pickle
+import dill as pickle
 import configparser
-from keras.layers import Input, Dense, Dropout, GlobalMaxPooling2D
+from keras.layers import Input, Dense, Dropout, GlobalMaxPooling2D, GlobalAveragePooling2D, LeakyReLU
 from keras.models import Model
 from keras.layers.convolutional import Conv2D
 from keras import regularizers
@@ -14,7 +14,6 @@ from os import listdir
 from os.path import isfile, join
 import shutil
 from typing import List
-from models.searn.mention import Mention
 from models.searn.state import State
 from models.searn.policy import Policy, ReferencePolicy
 from models.searn.metric import BCubed
@@ -28,6 +27,9 @@ import time
 from statistics import mean
 from keras.models import model_from_json
 from progressbar import ProgressBar, Percentage, Bar
+import cloudpickle
+
+pickle._dill._reverse_typemap['ClassType'] = type
 
 # keras.backend.set_session(tf_debug.LocalCLIDebugWrapperSession(tf.Session()))
 
@@ -243,8 +245,13 @@ class Training:
     @staticmethod
     def build_cnn(dimension, filter_size):
         input_matrix = Input(shape=(dimension, None, 1))
-        cnn = Conv2D(filter_size, activation='relu', kernel_size=(dimension, 1), data_format='channels_last')(
+        cnn = Conv2D(filter_size, kernel_size=(dimension, 1), data_format='channels_last', kernel_initializer=keras.initializers.Constant(value=12))(
             input_matrix)
+        cnn = LeakyReLU()(cnn)
+        cnn = Conv2D(int(filter_size / 2), kernel_size=(5, 5), padding="same", bias_initializer="random_normal")(cnn)
+        cnn = LeakyReLU()(cnn)
+        cnn = Conv2D(int(filter_size / 4), kernel_size=(5, 5), padding="same", bias_initializer="random_normal")(cnn)
+        cnn = LeakyReLU()(cnn)
         cnn = GlobalMaxPooling2D(data_format='channels_last')(cnn)
         return cnn, input_matrix
 
@@ -273,10 +280,10 @@ class Training:
             cnn_scalar, input_scalar = self.build_cnn(int(config_network['scalar_dimension']),
                                                       int(config_network['filter_size']))
             classifier = keras.layers.concatenate([cnn_embedding, cnn_scalar])
-            classifier = Dense(int(config_network['hidden_layer_units']), activation="relu")(classifier)
+            classifier = Dense(int(config_network['hidden_layer_units']))(classifier)
 
             # Add configurable dropout layer
-            classifier = Dropout(float(config_network['dropout_rate']))(classifier)
+            #classifier = Dropout(float(config_network['dropout_rate']))(classifier)
 
             # Load regularizer function to avoid overfitting
             kernel_regularizer_value = float(config_network['kernel_regularizer_value'])
@@ -288,6 +295,7 @@ class Training:
 
             classifier = Dense(1, activation="sigmoid", kernel_regularizer=kernel_regularizer)(classifier)
             model = Model(inputs=[input_semantic, input_scalar], outputs=[classifier])
+
         else:
             subfolder = join(self.folder_models, str(epoch_number))
             # Prepare filenames of the model
@@ -301,11 +309,13 @@ class Training:
             model.load_weights(filename_weights)
             print("Model is loaded")
         self.model = model
+        plot_model(self.model, to_file='debug/model.png', show_shapes=True)
+        print(self.model.summary())
 
     def recompile_model(self):
         config_network = self.config['NETWORK']
         # Load optimization function
-        optimizer = optimizers.Adam()
+        optimizer = optimizers.RMSprop()
         if config_network['optimizer'] == 'sgd':
             optimizer = optimizers.SGD(lr=float(config_network['sgd_lr']),
                                        momentum=float(config_network['sgd_momentum']),
@@ -313,13 +323,11 @@ class Training:
                                        nesterov=bool(int(config_network['sgd_nesterov'])))
         loss_function = tf.contrib.eager.defun(self.loss_function)
         self.model.compile(optimizer=optimizer, loss=loss_function, metrics=[])
-        plot_model(self.model, to_file='debug/model.png', show_shapes=True)
-        print(self.model.summary())
 
     def train_searn(self, epoch_number=None):
 
         # Load mentions from DB
-        folder = 'dataset_2'
+        folder = 'dataset_3'
         config_training = self.config['TRAINING']
         files = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
 
@@ -354,7 +362,7 @@ class Training:
 
                 # Read documents
                 handle = open(filename, 'rb')
-                documents: List[List[Mention]] = pickle.load(handle)
+                documents = pickle.load(handle)
                 # documents = documents[:1]
                 handle.close()
 
@@ -385,8 +393,10 @@ class Training:
                     agent.move_to_end_state(policy)
 
                     # print("Time to count: {0}".format(time.clock() - start))
-
+                    # print(len(list(dict.fromkeys(agent.states[-1].clusters))))
+                    # print(len(list(dict.fromkeys(agent.state_gold.clusters))))
                     training_set.extend(agent.form_training_set(policy, actions, policy_reference, metric))
+
                     pbar.update(document_id)
 
                     # print("Time for document: {0}".format(time.clock() - start))
@@ -463,7 +473,7 @@ class Training:
 
 if __name__ == "__main__":
 
-    epoch_start = 1
+    epoch_start = None
     training = Training()
     # training.load_train_data()
     training.build_model(epoch_start)

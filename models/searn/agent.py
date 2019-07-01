@@ -72,7 +72,7 @@ class Agent:
 
                     line[1] = line_format.format(c[entity_counter - 1])
                 lines.append(' '.join(line))
-        pass
+        return "\n".join(lines)
 
     def form_training_set(self, policy, actions, policy_reference, metric):
 
@@ -124,8 +124,11 @@ class Agent:
 
                 # Evaluate loss function by computing corresponding metric between gold state
                 #  and actual end state
+                a = metric.evaluate(state_end, self.state_gold)
                 losses.append(1 - metric.evaluate(state_end, self.state_gold))
 
+            if losses[0] < losses[1]:
+                pass
             # Append state with corresponding losses to the training set
             training_set.append({
                 'losses': losses,
@@ -225,7 +228,10 @@ class Agent:
         clusters = []
         for mention in tokens:
             if mention.is_entity:
-                clusters.append(mention.cluster_id)
+                cluster_id = mention.cluster_id
+                if cluster_id == '':
+                    cluster_id = str(uuid.uuid4())
+                clusters.append(cluster_id)
         self.state_gold = State(clusters)
 
     def __init__(self, _tokens: List[Mention], start=True):

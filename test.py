@@ -1,7 +1,7 @@
 from os import listdir
 from os.path import isfile, join
+import os
 import io
-from models.cluster_model import CoreferenceModel
 import configparser
 from keras.models import model_from_json
 from models.searn.policy import Policy
@@ -18,6 +18,8 @@ class Test:
 
     # Template to save models
     filename_template = "model_{0}"
+
+    folder_conll = "test/conll"
 
     model = None
 
@@ -40,6 +42,17 @@ class Test:
         model.load_weights(filename_weights)
         print("Model is loaded")
         self.model = model
+
+    def save_file(self, conll, document_id, is_actual=True):
+        extension = "key"
+        if not is_actual:
+            extension = "response"
+        filename = "{0}.{1}".format(document_id, extension)
+        filename = join(self.folder_conll, filename)
+
+        handle = open(filename, mode='w', encoding='utf-8')
+        handle.write(conll)
+        handle.close()
 
     def run(self):
 
@@ -64,18 +77,28 @@ class Test:
             # Calculate separator index to divide documents into 2 parts
             separator_index = int(training_split * len(documents)) + 1
 
-            for document_id, document in enumerate(documents[separator_index:]):
+            predict = []
+            actual = []
+
+            for document_id, document in enumerate(documents[separator_index:separator_index+100]):
                 agent = Agent(document)
                 agent.set_gold_state(document)
                 policy.preprocess_document(document)
                 agent.move_to_end_state(policy)
-                #agent.state_to_conll(agent.states[-1], document_id)
-                agent.state_to_conll(agent.state_gold, document_id)
-                break
+                conll_predict = agent.state_to_conll(agent.states[-1], document_id)
+                conll_actual = agent.state_to_conll(agent.state_gold, document_id)
+                predict.append(conll_predict)
+                actual.append(conll_actual)
+                # self.save_file(conll_predict, document_id, False)
+                # self.save_file(conll_actual, document_id, True)
+
+            file = "all"
+            self.save_file(os.linesep.join(predict), file, False)
+            self.save_file(os.linesep.join(actual), file, True)
 
 
 # Get list of files to examine
 if __name__ == "__main__":
     test = Test()
-    test.load_model(1)
+    test.load_model(0)
     test.run()

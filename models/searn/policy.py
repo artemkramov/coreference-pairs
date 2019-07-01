@@ -5,6 +5,8 @@ from ..embedding.semantic_embedding import SemanticEmbedding
 from ..embedding.scalar_embedding import ScalarEmbedding
 from ..sieve.sieve import Sieve
 from .action import PassAction, MergeAction
+import keras.backend as K
+from keras.models import Model
 
 
 # Class which defines network policy
@@ -43,6 +45,9 @@ class Policy:
 
         # Run neural network to predict
         prediction = self.model.predict_on_batch([matrices['semantic'], matrices['scalar']])[0][0]
+        # intermediate_layer_model = Model(inputs=self.model.input,
+        #                                  outputs=self.model.get_layer('dense_1').output)
+        # intermediate_output = intermediate_layer_model.predict([matrices['semantic'], matrices['scalar']])
         if prediction > self.PROB_THRESHOLD:
             return True
         return False
@@ -58,6 +63,8 @@ class Policy:
         # Prepare scalar and semantic matrices
         scalar_matrix = self.get_scalar_matrix_from_pair(pair_matrix)
         semantic_matrix = self.get_semantic_matrix_from_pair(pair_matrix)
+        # semantic_matrix = np.random.rand(semantic_matrix.shape[0], semantic_matrix.shape[1])
+        # scalar_matrix = np.random.rand(scalar_matrix.shape[0], scalar_matrix.shape[1])
         semantic_matrix = np.expand_dims(semantic_matrix, axis=2)
         semantic_matrix = np.expand_dims(semantic_matrix, axis=0)
         scalar_matrix = np.expand_dims(scalar_matrix, axis=2)
@@ -121,6 +128,13 @@ class ReferencePolicy:
     def apply(state: 'State', clusters_gold):
         if (state.current_mention_idx < len(
                 clusters_gold)) and state.current_mention_idx > state.current_antecedent_idx:
-            if clusters_gold[state.current_mention_idx] == clusters_gold[state.current_antecedent_idx]:
-                return MergeAction()
+            is_merge = True
+            if clusters_gold[state.current_mention_idx] != '' and clusters_gold[state.current_antecedent_idx] != '':
+                cluster_ant = state.get_siblings_of_mention(state.current_antecedent_idx)
+                for cluster_ant_id in cluster_ant:
+                    if clusters_gold[cluster_ant_id] != clusters_gold[state.current_mention_idx]:
+                        is_merge = False
+                        break
+                if is_merge:
+                    return MergeAction()
         return PassAction()

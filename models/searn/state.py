@@ -33,6 +33,14 @@ class State:
                 cluster.append(mentions[idx])
         return cluster
 
+    def get_siblings_of_mention(self, mention_id):
+        cluster = []
+        mention_cluster_id = self.get_cluster_id(mention_id)
+        for idx, cluster_id in enumerate(self.clusters):
+            if cluster_id == mention_cluster_id:
+                cluster.append(idx)
+        return cluster
+
     def get_cluster_of_mention(self, mention_id, mentions):
         mention_cluster_id = self.get_cluster_id(mention_id)
         return self.get_cluster_by_id(mention_cluster_id, mentions)
