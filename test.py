@@ -23,6 +23,8 @@ class Test:
 
     model = None
 
+    epoch = '-'
+
     def __init__(self):
         # Load configuration data
         config = configparser.ConfigParser()
@@ -30,6 +32,7 @@ class Test:
         self.config = config
 
     def load_model(self, epoch_number):
+        self.epoch = epoch_number
         subfolder = join(self.folder_models, str(epoch_number))
         # Prepare filenames of the model
         filename = self.filename_template.format(epoch_number)
@@ -80,7 +83,7 @@ class Test:
             predict = []
             actual = []
 
-            for document_id, document in enumerate(documents[separator_index:separator_index+100]):
+            for document_id, document in enumerate(documents[separator_index:]):
                 agent = Agent(document)
                 agent.set_gold_state(document)
                 policy.preprocess_document(document)
@@ -92,7 +95,7 @@ class Test:
                 # self.save_file(conll_predict, document_id, False)
                 # self.save_file(conll_actual, document_id, True)
 
-            file = "all"
+            file = self.epoch
             self.save_file(os.linesep.join(predict), file, False)
             self.save_file(os.linesep.join(actual), file, True)
 
@@ -100,5 +103,5 @@ class Test:
 # Get list of files to examine
 if __name__ == "__main__":
     test = Test()
-    test.load_model(0)
+    test.load_model(2)
     test.run()

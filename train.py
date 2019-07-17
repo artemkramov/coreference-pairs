@@ -473,7 +473,7 @@ class Training:
 
 if __name__ == "__main__":
 
-    epoch_start = None
+    epoch_start = 0
     training = Training()
     # training.load_train_data()
     training.build_model(epoch_start)

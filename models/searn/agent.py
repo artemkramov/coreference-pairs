@@ -124,7 +124,6 @@ class Agent:
 
                 # Evaluate loss function by computing corresponding metric between gold state
                 #  and actual end state
-                a = metric.evaluate(state_end, self.state_gold)
                 losses.append(1 - metric.evaluate(state_end, self.state_gold))
 
             if losses[0] < losses[1]:
