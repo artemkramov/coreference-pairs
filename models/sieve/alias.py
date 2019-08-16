@@ -25,7 +25,7 @@ class Alias:
             yield l[i:i + n]
 
     # Find wikipedia links for each named entity
-    def find_wikipedia_links(self, entities):
+    def find_wikipedia_links(self, mentions):
 
         # Resulting dictionary that contains entity ID with redirect links
         entity_links = {}
@@ -34,14 +34,13 @@ class Alias:
         title_groups = {}
 
         # Loop through entities array
-        for entity_id in entities:
-            entity = entities[entity_id]
+        for mention_idx, mention in enumerate(mentions):
             words_lemma = []
             words_raw = []
 
             # Check if the entity is proper name
             is_proper_name = True
-            for token in entity:
+            for token in mention.tokens:
                 if not token.IsProperName:
                     is_proper_name = False
                     break
@@ -60,7 +59,7 @@ class Alias:
                 # Check if the Wikipedia limit isn't overflowed
                 if len(title_groups[entity_lemma]) < self.wikipedia_max_count:
                     title_groups[entity_lemma].append({
-                        'entity_id': entity_id,
+                        'mention_id': mention.tokens[0].EntityID,
                         'text': entity_raw
                     })
 
@@ -78,19 +77,23 @@ class Alias:
                 'prop': 'redirects',
                 'titles': title
             }
-            response = requests.post(self.url_api, params)
-            if response.status_code == 200:
+            try:
+                response = requests.post(self.url_api, params)
+                if response.status_code == 200:
 
-                # Read JSON response
-                data = response.json()
-                if "query" in data and "pages" in data["query"]:
-                    pages = data["query"]["pages"]
-                    for key in pages:
-                        page_id = int(key)
-                        if page_id > 0:
-                            for item in title_groups[entity_lemma]:
-                                entity_links[item['entity_id']] = pages[key]
-                            break
+                    # Read JSON response
+                    data = response.json()
+                    if "query" in data and "pages" in data["query"]:
+                        pages = data["query"]["pages"]
+                        for key in pages:
+                            page_id = int(key)
+                            if page_id > 0:
+                                for item in title_groups[entity_lemma]:
+                                    entity_links[item['mention_id']] = pages[key]
+                                break
+            except ConnectionError:
+                print("Connection error")
+                pass
 
         return entity_links
 

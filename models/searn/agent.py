@@ -3,10 +3,13 @@ from typing import List
 from .policy import Policy, ReferencePolicy
 from .action import MergeAction, PassAction, Action
 from .state import State
+from ..sieve.sieve import Sieve
 import uuid
 import copy
 import time
+import itertools
 import os
+import pickle
 
 
 class Agent:
@@ -22,6 +25,9 @@ class Agent:
 
     # Gold state
     state_gold: State = None
+
+    # Result of the sieve work
+    pairs_sieve = []
 
     # From input matrices to compute
     @staticmethod
@@ -72,6 +78,7 @@ class Agent:
 
                     line[1] = line_format.format(c[entity_counter - 1])
                 lines.append(' '.join(line))
+        lines.append('#end document')
         return "\n".join(lines)
 
     def form_training_set(self, policy, actions, policy_reference, metric):
@@ -180,6 +187,42 @@ class Agent:
                 state_new.current_mention_idx += 1
         return state_new
 
+    # Apply a set of sieves to find obvious True/False pairs
+    def set_sieve(self):
+        sieve = Sieve()
+
+        # Transform mention form to a token list
+        tokens = []
+        for mention in self.tokens:
+            for token in mention.tokens:
+                tokens.append(token)
+
+        # Find direct speech groups
+        direct_speech_groups = sieve.find_direct_speech(tokens)
+
+        # Find aliases
+        aliases = sieve.find_aliases(self.mentions)
+
+        # Form paired combinations of entities to apply sieve
+        combinations = list(itertools.combinations(list(range(0, len(self.mentions))), 2))
+
+        # Init pairs of sieve
+        pairs_sieve = []
+
+        # Loop through combinations list
+        for comb in combinations:
+            first_mention = self.mentions[comb[0]]
+            second_mention = self.mentions[comb[1]]
+
+            # Apply sieve to the pair of entities
+            result = sieve.apply([first_mention, second_mention], direct_speech_groups, tokens, aliases)
+
+            # If the sieve decision is definite (True/False)
+            # Than save that pair iof entities
+            if result is not None:
+                pairs_sieve.append((comb[0], comb[1], result))
+        self.pairs_sieve = pairs_sieve
+
     # Modify state till the end
     def move_to_end_state(self, policy, state_gold: 'State' = None):
 
@@ -199,6 +242,17 @@ class Agent:
             # Else use reference policy to move
             if state_gold is None:
                 action = None
+                # Check if pairs from sieve contain current pair
+                result = None
+                for pair in self.pairs_sieve:
+                    if state_current.current_antecedent_idx == pair[0] and state_current.current_mention_idx == pair[1]:
+                        result = pair[2]
+                        break
+                if result is not None:
+                    if result:
+                        action = MergeAction()
+                    else:
+                        action = PassAction()
             else:
                 action = policy.apply(state_current, state_gold.clusters)
 

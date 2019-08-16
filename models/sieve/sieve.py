@@ -2,6 +2,8 @@ from .direct_speech import DirectSpeech
 from .alias import Alias
 from abc import ABC, abstractmethod
 from models.dictionary import PartOfSpeech
+from typing import List
+from ..searn.mention import Mention
 
 
 # Class to apply a set of sieves
@@ -32,7 +34,7 @@ class Sieve:
         full_symbol_handler = FullSymbolHandler()
         partial_symbol_handler = PartialSymbolHandler()
         alias_handler = AliasHandler()
-        discourse_handler.set_next(full_symbol_handler).set_next(partial_symbol_handler) #.set_next(alias_handler)
+        discourse_handler.set_next(full_symbol_handler).set_next(partial_symbol_handler).set_next(alias_handler)
         return discourse_handler.handle_request(entities, direct_speech_groups, tokens, aliases)
 
 
@@ -60,10 +62,10 @@ class Handler(ABC):
 # Handler to analyze direct speech
 class DiscourseHandler(Handler):
 
-    def handle_request(self, entities, direct_speech_groups, tokens, aliases):
+    def handle_request(self, mentions: "List[Mention]", direct_speech_groups, tokens, aliases):
         # Get first tokens from every entity
-        token_first_entity = entities[0][0]
-        token_second_entity = entities[1][0]
+        token_first_entity = mentions[0].tokens[0]
+        token_second_entity = mentions[1].tokens[0]
 
         # Check if tokens are located inside direct speech
         if token_first_entity.WordOrder in direct_speech_groups and token_second_entity.WordOrder in direct_speech_groups:
@@ -81,7 +83,7 @@ class DiscourseHandler(Handler):
                         and token_first_entity.Lemmatized.lower() == token_second_entity.Lemmatized.lower() \
                         and token_first_entity.PartOfSpeech == PartOfSpeech.PRONOUN \
                         and token_second_entity.PartOfSpeech == PartOfSpeech.PRONOUN \
-                        and len(entities[0]) == 1 and len(entities[1]) == 1 \
+                        and len(mentions[0].tokens) == 1 and len(mentions[1].tokens) == 1 \
                         and (
                         token_first_entity.Lemmatized.lower() == 'я' or token_first_entity.Lemmatized.lower() == 'ти'):
                     return True
@@ -91,14 +93,14 @@ class DiscourseHandler(Handler):
                 автор і всі об’єкти у його висловлюваннях, крім займенника «я», відсіюються
                 """
                 if token_first_group['role'] != token_second_group['role']:
-                    author = entities[0]
-                    pronoun = entities[1]
+                    author = mentions[0]
+                    pronoun = mentions[1]
                     if token_second_group['role'] == 'author':
-                        author = entities[1]
-                        pronoun = entities[0]
-                    if self.is_entity_is_single_author(author, direct_speech_groups, tokens) and len(pronoun) == 1 \
-                            and pronoun[0].PartOfSpeech == PartOfSpeech.PRONOUN:
-                        if pronoun[0].Lemmatized.lower() == 'я':
+                        author = mentions[1]
+                        pronoun = mentions[0]
+                    if self.is_entity_is_single_author(author, direct_speech_groups, tokens) and len(pronoun.tokens) == 1 \
+                            and pronoun.tokens[0].PartOfSpeech == PartOfSpeech.PRONOUN:
+                        if pronoun.tokens[0].Lemmatized.lower() == 'я':
                             return True
                         else:
                             return False
@@ -109,7 +111,7 @@ class DiscourseHandler(Handler):
                 if token_first_group['role'] == token_second_group['role'] and token_first_group['role'] == 'direct':
                     if token_first_entity.PartOfSpeech == PartOfSpeech.PRONOUN \
                             and token_second_entity.PartOfSpeech == PartOfSpeech.PRONOUN \
-                            and len(entities[0]) == 1 and len(entities[1]) == 1 \
+                            and len(mentions[0].tokens) == 1 and len(mentions[1].tokens) == 1 \
                             and token_first_entity.Lemmatized.lower() != token_second_entity.Lemmatized.lower():
                         return False
 
@@ -119,22 +121,22 @@ class DiscourseHandler(Handler):
                 if token_first_group['role'] == token_second_group['role'] and token_first_group['role'] == 'direct':
                     if token_first_entity.PartOfSpeech == PartOfSpeech.PRONOUN \
                             or token_second_entity.PartOfSpeech == PartOfSpeech.PRONOUN:
-                        pronoun = entities[0]
-                        np = entities[1]
+                        pronoun = mentions[0]
+                        np = mentions[1]
                         if token_second_entity.PartOfSpeech == PartOfSpeech.PRONOUN:
-                            pronoun = entities[1]
-                            np = entities[0]
-                        if len(pronoun) == 1 and pronoun[0].Lemmatized.lower() in ["я", "ти", "ми"] \
-                                and (np[0].PartOfSpeech != PartOfSpeech.PRONOUN or len(np) > 1):
+                            pronoun = mentions[1]
+                            np = mentions[0]
+                        if len(pronoun.tokens) == 1 and pronoun.tokens[0].Lemmatized.lower() in ["я", "ти", "ми"] \
+                                and (np.tokens[0].PartOfSpeech != PartOfSpeech.PRONOUN or len(np.tokens) > 1):
                             return False
 
-        return super().handle_request(entities, direct_speech_groups, tokens, aliases)
+        return super().handle_request(mentions, direct_speech_groups, tokens, aliases)
 
     # Check if the entity is a single entity inside the author part
     @staticmethod
-    def is_entity_is_single_author(entity, direct_speech_groups, tokens):
+    def is_entity_is_single_author(mention: Mention, direct_speech_groups, tokens):
         # Get direct speech group
-        entity_group = direct_speech_groups[entity[0].WordOrder]
+        entity_group = direct_speech_groups[mention.tokens[0].WordOrder]
         counter = 0
 
         # Loop through all speech groups
@@ -149,7 +151,7 @@ class DiscourseHandler(Handler):
                     counter += 1
 
         # If length pf entity equals to counter
-        if len(entity) == counter:
+        if len(mention.tokens) == counter:
             return True
         return False
 
@@ -157,47 +159,47 @@ class DiscourseHandler(Handler):
 # Class to check if entities are equal
 class FullSymbolHandler(Handler):
 
-    def handle_request(self, entities, direct_speech_groups, tokens, aliases):
+    def handle_request(self, mentions: List[Mention], direct_speech_groups, tokens, aliases):
         # Check if count of tokens is the same
-        if len(entities[0]) == len(entities[1]):
+        if len(mentions[0].tokens) == len(mentions[1].tokens):
             is_equal = True
 
             # Loop through tokens of the first entity
             # and compare them with corresponding tokens of the second entity
             # Check if both tokens are proper names
-            for idx, tokens_first_entity in enumerate(entities[0]):
-                if not (tokens_first_entity.IsProperName and entities[1][idx].IsProperName
-                        and tokens_first_entity.Lemmatized.lower() == entities[1][idx].Lemmatized.lower()):
+            for idx, tokens_first_entity in enumerate(mentions[0].tokens):
+                if not (tokens_first_entity.IsProperName and mentions[1].tokens[idx].IsProperName
+                        and tokens_first_entity.Lemmatized.lower() == mentions[1].tokens[idx].Lemmatized.lower()):
                     is_equal = False
                     break
             if is_equal:
                 return True
-        return super().handle_request(entities, direct_speech_groups, tokens, aliases)
+        return super().handle_request(mentions, direct_speech_groups, tokens, aliases)
 
 
 # Class to handle entities with partial conformity
 class PartialSymbolHandler(Handler):
 
-    def handle_request(self, entities, direct_speech_groups, tokens, aliases):
+    def handle_request(self, mentions: List[Mention], direct_speech_groups, tokens, aliases):
 
         # Find head word and entity string of the first and second entities
-        head_word_first, words_first = self.find_head_word_with_preceding(entities[0])
-        head_word_second, words_second = self.find_head_word_with_preceding(entities[1])
+        head_word_first, words_first = self.find_head_word_with_preceding(mentions[0].tokens)
+        head_word_second, words_second = self.find_head_word_with_preceding(mentions[1].tokens)
 
         # If both head words are proper names and preceding parts are equal
         # than set this pair as a co-referent
         if head_word_first.IsProperName and head_word_second.IsProperName and words_first == words_second:
             return True
-        return super().handle_request(entities, direct_speech_groups, tokens, aliases)
+        return super().handle_request(mentions, direct_speech_groups, tokens, aliases)
 
     # Find head word and get string of all preceding words of the head word
     @staticmethod
-    def find_head_word_with_preceding(entity):
+    def find_head_word_with_preceding(tokens):
         words = []
-        head_word = entity[-1]
+        head_word = tokens[-1]
 
         # Loop through tokens of the entity
-        for token in entity:
+        for token in tokens:
 
             # Append lemmatized version of each token
             words.append(token.Lemmatized.lower())
@@ -215,9 +217,9 @@ class PartialSymbolHandler(Handler):
 # Class to check if both entities link to the same Wikipedia article
 class AliasHandler(Handler):
 
-    def handle_request(self, entities, direct_speech_groups, tokens, aliases):
-        first_entity_id = entities[0][0].EntityID
-        second_entity_id = entities[1][0].EntityID
+    def handle_request(self, mentions: List[Mention], direct_speech_groups, tokens, aliases):
+        first_entity_id = mentions[0].tokens[0].EntityID
+        second_entity_id = mentions[1].tokens[0].EntityID
 
         # Check if both entities have links in Wikipedia
         if first_entity_id in aliases and second_entity_id in aliases:
@@ -225,7 +227,7 @@ class AliasHandler(Handler):
                                               aliases[second_entity_id]) \
                     or self.is_entity_link_to_another(aliases[second_entity_id], aliases[first_entity_id]):
                 return True
-        return super().handle_request(entities, direct_speech_groups, tokens, aliases)
+        return super().handle_request(mentions, direct_speech_groups, tokens, aliases)
 
     # Check if one entity is link to another
     @staticmethod
