@@ -86,7 +86,7 @@ class Test:
             for document_id, document in enumerate(documents[separator_index:]):
                 agent = Agent(document)
                 agent.set_gold_state(document)
-                agent.set_sieve()
+                # agent.set_sieve()
                 policy.preprocess_document(document)
                 agent.move_to_end_state(policy)
                 conll_predict = agent.state_to_conll(agent.states[-1], document_id)
@@ -104,5 +104,5 @@ class Test:
 # Get list of files to examine
 if __name__ == "__main__":
     test = Test()
-    test.load_model(0)
+    test.load_model(9)
     test.run()

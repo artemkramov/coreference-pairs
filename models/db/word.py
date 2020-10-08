@@ -22,3 +22,22 @@ class DbWord(Base):
     RawTagString = Column(String)
     CoreferenceGroupID = Column(String)
     RemoteIPAddress = Column(String)
+
+
+class DbWordPublok(Base):
+    __tablename__ = "pubwordsok_np"
+    ID = Column(Integer, primary_key=True)
+    RawText = Column(String)
+    DocumentID = Column(String)
+    WordOrder = Column(Integer)
+    PartOfSpeech = Column(String)
+    Lemmatized = Column(String)
+    IsPlural = Column(Integer)
+    IsProperName = Column(Integer)
+    IsHeadWord = Column(Integer)
+    Gender = Column(String)
+    EntityID = Column(String)
+    RawTagString = Column(String)
+    CoreferenceGroupID = Column(String)
+    RemoteIPAddress = Column(String)
+    WordID = Column(Integer)
