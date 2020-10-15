@@ -4,11 +4,14 @@ import os
 import io
 import configparser
 from keras.models import model_from_json
-from models.searn.policy import Policy
+from models.searn.policy import Policy, ReferencePolicy
 from models.searn.mention import Mention
 from models.searn.agent import Agent
 from typing import List
 import pickle
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, LSTM, Bidirectional
 
 
 class Test:
@@ -30,6 +33,22 @@ class Test:
         config = configparser.ConfigParser()
         config.read('config/train.ini')
         self.config = config
+
+    # Build model due to the configuration parameters
+    def build_model(self, epoch_number=None):
+        embedding_size = 1024 * 4
+        lstm_units = 128
+        dense_units = 128
+
+        model = CoreferentClusterModel(embedding_size, lstm_units, dense_units)
+        if not (epoch_number is None):
+            subfolder = join(self.folder_models, str(epoch_number))
+            # Prepare filenames of the model
+            filename_weights = self.filename_template.format(epoch_number)
+            model.load_weights(join(subfolder, filename_weights))
+            print("Model is loaded")
+            self.epoch = epoch_number
+        self.model = model
 
     def load_model(self, epoch_number):
         self.epoch = epoch_number
@@ -66,6 +85,7 @@ class Test:
 
         # Policy to learn
         policy = Policy(self.model)
+        reference_policy = ReferencePolicy()
 
         # Percentage of documents for training purpose
         training_split = float(config_training['training_split'])
@@ -83,7 +103,10 @@ class Test:
             predict = []
             actual = []
 
+            #separator_index = 2330
+
             for document_id, document in enumerate(documents[separator_index:]):
+                print(document_id)
                 agent = Agent(document)
                 agent.set_gold_state(document)
                 # agent.set_sieve()
@@ -95,14 +118,35 @@ class Test:
                 actual.append(conll_actual)
                 # self.save_file(conll_predict, document_id, False)
                 # self.save_file(conll_actual, document_id, True)
+                #print(agent.actions)
 
             file = self.epoch
             self.save_file(os.linesep.join(predict), file, False)
             self.save_file(os.linesep.join(actual), file, True)
 
 
+class CoreferentClusterModel(Model):
+
+  def __init__(self, embedding_size, lstm_units, dense_units, **kwargs):
+    super(CoreferentClusterModel, self).__init__(**kwargs)
+
+    self.bilstm = Bidirectional(LSTM(lstm_units, activation='tanh', recurrent_activation="sigmoid", input_shape=(None, embedding_size), dtype=tf.float32))
+    self.dense1 = Dense(dense_units)
+    self.dense2 = Dense(1, activation='sigmoid')
+
+  def call(self, inputs, training=None, mask=None):
+
+    cluster1 = self.bilstm(inputs[0])
+    cluster2 = self.bilstm(inputs[1])
+
+    cluster = tf.concat([cluster1, cluster2], axis=-1)
+    x = self.dense1(cluster)
+
+    return self.dense2(x)
+
+
 # Get list of files to examine
 if __name__ == "__main__":
     test = Test()
-    test.load_model(9)
+    test.build_model(1)
     test.run()

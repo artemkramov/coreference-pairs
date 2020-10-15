@@ -7,6 +7,8 @@ from ..sieve.sieve import Sieve
 from .action import PassAction, MergeAction
 import keras.backend as K
 from keras.models import Model
+from timeit import default_timer as timer
+
 
 
 # Class which defines network policy
@@ -18,7 +20,7 @@ class Policy:
     semantic_embedding: SemanticEmbedding = None
 
     # Embedding to extract scalar data
-    scalar_embedding: ScalarEmbedding = None
+    scalar_embedding = None
 
     # Sieve to filter obvious pairs of mentions
     sieve: Sieve = None
@@ -33,59 +35,47 @@ class Policy:
     # Load embedding models
     def load_embeddings(self):
         self.semantic_embedding = SemanticEmbedding()
-        self.scalar_embedding = ScalarEmbedding()
+        self.scalar_embedding = None
 
         # Load sieve
         self.sieve = Sieve()
 
     # Evaluate ability for cluster merging
-    def apply(self, cluster_mention: List[Mention], cluster_antecedent: List[Mention]):
+    def apply(self, cluster_mention, cluster_antecedent):
 
-        matrices = self.clusters_to_matrices(cluster_mention, cluster_antecedent)
+        # start = timer()
+        cluster1, cluster2 = self.clusters_to_matrices(cluster_mention, cluster_antecedent)
+        # end = timer()
 
         # Run neural network to predict
-        prediction = self.model.predict_on_batch([matrices['semantic'], matrices['scalar']])[0][0]
-        # intermediate_layer_model = Model(inputs=self.model.input,
-        #                                  outputs=self.model.get_layer('dense_1').output)
-        # intermediate_output = intermediate_layer_model.predict([matrices['semantic'], matrices['scalar']])
+        prediction = self.model([cluster1, cluster2])[0][0]
+
+        # print(end - start)
         if prediction > self.PROB_THRESHOLD:
             return True
         return False
 
     # Transform pair of clusters to common matrix
-    def clusters_to_matrices(self, cluster_mention: List[Mention], cluster_antecedent: List[Mention]):
+    def clusters_to_matrices(self, cluster_mention, cluster_antecedent):
         # Form pair "mention"-"antecedent"
-        pair = [cluster_mention, cluster_antecedent]
 
-        # Form matrix with all combination of entities from mention and antecedent
-        pair_matrix = self.get_matrix_from_pair(pair)
+        cluster1 = np.expand_dims(self.semantic_embedding.cluster_to_matrix(cluster_mention), axis=0)
+        cluster2 = np.expand_dims(self.semantic_embedding.cluster_to_matrix(cluster_antecedent), axis=0)
 
-        # Prepare scalar and semantic matrices
-        scalar_matrix = self.get_scalar_matrix_from_pair(pair_matrix)
-        semantic_matrix = self.get_semantic_matrix_from_pair(pair_matrix)
-        # semantic_matrix = np.random.rand(semantic_matrix.shape[0], semantic_matrix.shape[1])
-        # scalar_matrix = np.random.rand(scalar_matrix.shape[0], scalar_matrix.shape[1])
-        semantic_matrix = np.expand_dims(semantic_matrix, axis=2)
-        semantic_matrix = np.expand_dims(semantic_matrix, axis=0)
-        scalar_matrix = np.expand_dims(scalar_matrix, axis=2)
-        scalar_matrix = np.expand_dims(scalar_matrix, axis=0)
-        return {
-            'semantic': semantic_matrix,
-            'scalar': scalar_matrix
-        }
+        return cluster1, cluster2
 
     # Preprocess document to fit features of embeddings
-    def preprocess_document(self, mentions: List[Mention]):
+    def preprocess_document(self, mentions):
         tokens = []
         for mention in mentions:
             tokens.extend(mention.tokens)
-        self.scalar_embedding.evaluate_tfidf(tokens)
         self.semantic_embedding.tokens = tokens
+        self.semantic_embedding.clear_phrase_cache()
 
     # Form matrix of pairs of entities
     # from the entity links
     @staticmethod
-    def get_matrix_from_pair(pair: List[List[Mention]]):
+    def get_matrix_from_pair(pair):
 
         # Init matrix
         pair_matrix = []
