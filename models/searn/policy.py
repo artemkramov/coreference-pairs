@@ -8,7 +8,7 @@ from .action import PassAction, MergeAction
 import keras.backend as K
 from keras.models import Model
 from timeit import default_timer as timer
-
+import pandas as pd
 
 
 # Class which defines network policy
@@ -17,40 +17,58 @@ class Policy:
     model = None
 
     # Embedding to extract semantic data
-    semantic_embedding: SemanticEmbedding = None
+    semantic_embedding: None
 
     # Embedding to extract scalar data
     scalar_embedding = None
 
     # Sieve to filter obvious pairs of mentions
-    sieve: Sieve = None
+    sieve = None
 
     # Threshold to decide if clusters are compatible to be merged
     PROB_THRESHOLD = 0.5
 
-    def __init__(self, _model):
-        self.model = _model
+    transformers = None
+
+    def __init__(self, model, transformers):
+        self.model = model
+        self.transformers = transformers
         self.load_embeddings()
 
     # Load embedding models
     def load_embeddings(self):
-        self.semantic_embedding = SemanticEmbedding()
-        self.scalar_embedding = None
+        # self.semantic_embedding = SemanticEmbedding()
+        self.scalar_embedding = ScalarEmbedding()
 
         # Load sieve
-        self.sieve = Sieve()
+        # self.sieve = Sieve()
+
+    # Evaluate ability for cluster merging
+    def apply_train(self, cluster_mention, cluster_antecedent):
+
+        cluster1, cluster2 = self.clusters_to_matrices(cluster_mention, cluster_antecedent)
+
+        # Run neural network to predict
+        prediction = self.model(cluster1, cluster2)
+
+        return prediction
 
     # Evaluate ability for cluster merging
     def apply(self, cluster_mention, cluster_antecedent):
+        vectors = []
+        for mention1 in cluster_mention:
+            for mention2 in cluster_antecedent:
+                pair = [mention2, mention1]
+                vectors.append(self.scalar_embedding.pair2vec(pair))
+        vectors = np.array(vectors)
+        vectors = self.transformers.transform(vectors)
+        # df = pd.DataFrame(vectors)
+        # df.columns = ['is_pronoun1', 'tfidf1', 'is_pronoun2', 'tfidf2', 'is_dem2', 'count_of_words',
+        #               'count_of_entities', 'is_lemma_equal', 'is_number_entities_same', 'is_gender_same',
+        #               'is_proper_name', 'is_additional']
+        # df[['count_of_words', 'count_of_entities']] = self.transformers.fit_transform(df)
+        prediction = np.mean(self.model.predict_proba(vectors)[:, 1])
 
-        # start = timer()
-        cluster1, cluster2 = self.clusters_to_matrices(cluster_mention, cluster_antecedent)
-        # end = timer()
-
-        # Run neural network to predict
-        prediction = self.model([cluster1, cluster2])[0][0]
-
-        # print(end - start)
         if prediction > self.PROB_THRESHOLD:
             return True
         return False
@@ -69,8 +87,7 @@ class Policy:
         tokens = []
         for mention in mentions:
             tokens.extend(mention.tokens)
-        self.semantic_embedding.tokens = tokens
-        self.semantic_embedding.clear_phrase_cache()
+        self.scalar_embedding.evaluate_tfidf(tokens)
 
     # Form matrix of pairs of entities
     # from the entity links

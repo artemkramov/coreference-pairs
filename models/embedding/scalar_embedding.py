@@ -6,6 +6,7 @@ from sklearn.exceptions import DataConversionWarning
 import warnings
 from ..searn.mention import Mention
 from typing import List
+import pandas as pd
 
 warnings.filterwarnings(action='ignore', category=DataConversionWarning)
 
@@ -50,8 +51,8 @@ class ScalarEmbedding(BaseEmbedding):
             use_idf=True,
             tokenizer=self.dummy_fun,
             preprocessor=self.dummy_fun)
-        tfidf.fit(sentences)
-        self.tfidf = tfidf.vocabulary_
+        tfidf_matrix = tfidf.fit_transform(sentences)
+        self.tfidf = pd.DataFrame(tfidf_matrix.toarray(), columns = tfidf.get_feature_names())
 
     # Inherit parent method to normalize the retrieved matrix
     def matrix2vec(self, pair_matrix):
@@ -59,8 +60,18 @@ class ScalarEmbedding(BaseEmbedding):
         matrix_normalized = preprocessing.MinMaxScaler().fit_transform(matrix)
         return matrix_normalized
 
+    def get_sentence_number(self, mention):
+
+        sentence_number = 0
+        position = mention.WordOrder - 1
+        while position >= 0:
+          if self.tokens[position].RawTagString == './SENT_END':
+            sentence_number += 1
+          position = position - 1
+        return sentence_number
+
     # Inherit empty parent method to extract appropriate scalar features
-    def pair2vec(self, pair_words: List[Mention]):
+    def pair2vec(self, pair_words):
         vector = []
 
         # Split array into two items
@@ -74,9 +85,9 @@ class ScalarEmbedding(BaseEmbedding):
         # Append coordinates with features such as a pronoun detection
         # and TF-IDF value
         vector.append(int(self.check_if_pronoun(first_item_head)))
-        vector.append(self.tfidf[first_item_head.Lemmatized.lower()])
+        vector.append(self.tfidf[first_item_head.Lemmatized.lower()][self.get_sentence_number(first_item_head)])
         vector.append(int(self.check_if_pronoun(second_item_head)))
-        vector.append(self.tfidf[second_item_head.Lemmatized.lower()])
+        vector.append(self.tfidf[second_item_head.Lemmatized.lower()][self.get_sentence_number(second_item_head)])
 
         # Check if the second item is like 'той', 'та' etc.
         # It means that such pronoun has type 'Dem' (Demonstrative)
@@ -167,7 +178,7 @@ class ScalarEmbedding(BaseEmbedding):
 
     # Find head word index of the entity
     @staticmethod
-    def get_head_word_index(item: Mention):
+    def get_head_word_index(item):
         index = 0
         for idx, token in enumerate(item.tokens):
             if token.IsHeadWord:

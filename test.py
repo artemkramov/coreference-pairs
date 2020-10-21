@@ -10,8 +10,9 @@ from models.searn.agent import Agent
 from typing import List
 import pickle
 import tensorflow as tf
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, LSTM, Bidirectional
+import joblib
+import dill
+from sklearn.ensemble import GradientBoostingClassifier, ExtraTreesClassifier
 
 
 class Test:
@@ -28,6 +29,8 @@ class Test:
 
     epoch = '-'
 
+    transformers = None
+
     def __init__(self):
         # Load configuration data
         config = configparser.ConfigParser()
@@ -35,20 +38,9 @@ class Test:
         self.config = config
 
     # Build model due to the configuration parameters
-    def build_model(self, epoch_number=None):
-        embedding_size = 1024 * 4
-        lstm_units = 128
-        dense_units = 128
-
-        model = CoreferentClusterModel(embedding_size, lstm_units, dense_units)
-        if not (epoch_number is None):
-            subfolder = join(self.folder_models, str(epoch_number))
-            # Prepare filenames of the model
-            filename_weights = self.filename_template.format(epoch_number)
-            model.load_weights(join(subfolder, filename_weights))
-            print("Model is loaded")
-            self.epoch = epoch_number
-        self.model = model
+    def build_model(self):
+        self.model = joblib.load(join(self.folder_models, "extra_trees_clf.pkl"))
+        self.transformers = dill.load(open(join(self.folder_models, "transformers.pickle"), mode='rb'))
 
     def load_model(self, epoch_number):
         self.epoch = epoch_number
@@ -84,7 +76,7 @@ class Test:
         files = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
 
         # Policy to learn
-        policy = Policy(self.model)
+        policy = Policy(self.model, self.transformers)
         reference_policy = ReferencePolicy()
 
         # Percentage of documents for training purpose
@@ -103,9 +95,9 @@ class Test:
             predict = []
             actual = []
 
-            #separator_index = 2330
+            separator_index = 2300
 
-            for document_id, document in enumerate(documents[:5]):
+            for document_id, document in enumerate(documents[separator_index:]):
                 print(document_id)
                 agent = Agent(document)
                 agent.set_gold_state(document)
@@ -125,28 +117,8 @@ class Test:
             self.save_file(os.linesep.join(actual), file, True)
 
 
-class CoreferentClusterModel(Model):
-
-  def __init__(self, embedding_size, lstm_units, dense_units, **kwargs):
-    super(CoreferentClusterModel, self).__init__(**kwargs)
-
-    self.bilstm = Bidirectional(LSTM(lstm_units, activation='tanh', recurrent_activation="sigmoid", input_shape=(None, embedding_size), dtype=tf.float32))
-    self.dense1 = Dense(dense_units)
-    self.dense2 = Dense(1, activation='sigmoid')
-
-  def call(self, inputs, training=None, mask=None):
-
-    cluster1 = self.bilstm(inputs[0])
-    cluster2 = self.bilstm(inputs[1])
-
-    cluster = tf.concat([cluster1, cluster2], axis=-1)
-    x = self.dense1(cluster)
-
-    return self.dense2(x)
-
-
 # Get list of files to examine
 if __name__ == "__main__":
     test = Test()
-    test.build_model(8)
+    test.build_model()
     test.run()
