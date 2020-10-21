@@ -105,7 +105,7 @@ class Test:
 
             #separator_index = 2330
 
-            for document_id, document in enumerate(documents[separator_index:]):
+            for document_id, document in enumerate(documents[:5]):
                 print(document_id)
                 agent = Agent(document)
                 agent.set_gold_state(document)
@@ -148,5 +148,5 @@ class CoreferentClusterModel(Model):
 # Get list of files to examine
 if __name__ == "__main__":
     test = Test()
-    test.build_model(1)
+    test.build_model(8)
     test.run()
