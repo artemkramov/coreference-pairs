@@ -37,7 +37,7 @@ class Policy:
 
     # Load embedding models
     def load_embeddings(self):
-        # self.semantic_embedding = SemanticEmbedding()
+        self.semantic_embedding = SemanticEmbedding()
         self.scalar_embedding = ScalarEmbedding()
 
         # Load sieve
@@ -59,7 +59,9 @@ class Policy:
         for mention1 in cluster_mention:
             for mention2 in cluster_antecedent:
                 pair = [mention2, mention1]
-                vectors.append(self.scalar_embedding.pair2vec(pair))
+                vector = self.scalar_embedding.pair2vec(pair)
+                vector.append(self.semantic_embedding.get_pair_similarity(pair))
+                vectors.append(vector)
         vectors = np.array(vectors)
         vectors = self.transformers.transform(vectors)
         # df = pd.DataFrame(vectors)

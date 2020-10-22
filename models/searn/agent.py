@@ -25,6 +25,8 @@ class Agent:
     # Gold state
     state_gold: State = None
 
+    pairs_sieve = []
+
     # From input matrices to compute
     @staticmethod
     def get_matrices(policy, state_current, mentions):
@@ -178,6 +180,17 @@ class Agent:
             # Else use reference policy to move
             if state_gold is None:
                 action = None
+                # Check if pairs from sieve contain current pair
+                result = None
+                for pair in self.pairs_sieve:
+                    if state_current.current_antecedent_idx == pair[0] and state_current.current_mention_idx == pair[1]:
+                        result = pair[2]
+                        break
+                if result is not None:
+                    if result:
+                        action = MergeAction()
+                    else:
+                        action = PassAction()
             else:
                 action = policy.apply(state_current, state_gold.clusters)
 
@@ -235,6 +248,42 @@ class Agent:
     def set_tokens(self, _tokens):
         self.tokens = copy.deepcopy(_tokens)
         self.mentions = []
+
+    # Apply a set of sieves to find obvious True/False pairs
+    def set_sieve(self):
+        sieve = Sieve()
+
+        # Transform mention form to a token list
+        tokens = []
+        for mention in self.tokens:
+            for token in mention.tokens:
+                tokens.append(token)
+
+        # Find direct speech groups
+        direct_speech_groups = sieve.find_direct_speech(tokens)
+
+        # Find aliases
+        aliases = sieve.find_aliases(self.mentions)
+
+        # Form paired combinations of entities to apply sieve
+        combinations = list(itertools.combinations(list(range(0, len(self.mentions))), 2))
+
+        # Init pairs of sieve
+        pairs_sieve = []
+
+        # Loop through combinations list
+        for comb in combinations:
+            first_mention = self.mentions[comb[0]]
+            second_mention = self.mentions[comb[1]]
+
+            # Apply sieve to the pair of entities
+            result = sieve.apply([first_mention, second_mention], direct_speech_groups, tokens, aliases)
+
+            # If the sieve decision is definite (True/False)
+            # Than save that pair iof entities
+            if result is not None:
+                pairs_sieve.append((comb[0], comb[1], result))
+        self.pairs_sieve = pairs_sieve
 
     def state_to_conll(self, state, document_id, offset=0):
         document_id = str(document_id)

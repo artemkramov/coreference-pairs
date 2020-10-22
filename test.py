@@ -39,8 +39,8 @@ class Test:
 
     # Build model due to the configuration parameters
     def build_model(self):
-        self.model = joblib.load(join(self.folder_models, "extra_trees_clf.pkl"))
-        self.transformers = dill.load(open(join(self.folder_models, "transformers.pickle"), mode='rb'))
+        self.model = joblib.load(join(self.folder_models, "extra_trees_clf_1.pkl"))
+        self.transformers = dill.load(open(join(self.folder_models, "transformers_1.pickle"), mode='rb'))
 
     def load_model(self, epoch_number):
         self.epoch = epoch_number
@@ -96,6 +96,8 @@ class Test:
             actual = []
 
             separator_index = 2300
+
+            print(len(documents))
 
             for document_id, document in enumerate(documents[separator_index:]):
                 print(document_id)
