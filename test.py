@@ -95,7 +95,7 @@ class Test:
             predict = []
             actual = []
 
-            separator_index = 2300
+            # separator_index = 2300
 
             print(len(documents))
 
