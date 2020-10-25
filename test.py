@@ -11,6 +11,7 @@ from typing import List
 import pickle
 import tensorflow as tf
 import joblib
+import logging
 import dill
 from sklearn.ensemble import GradientBoostingClassifier, ExtraTreesClassifier
 
@@ -85,7 +86,7 @@ class Test:
         for filename in files:
             # Read documents
             handle = open(filename, 'rb')
-            documents: List[List[Mention]] = pickle.load(handle)
+            documents: List[List[Mention]] = dill.load(handle)
             # documents = documents[:1]
             handle.close()
 
@@ -99,17 +100,22 @@ class Test:
 
             print(len(documents))
 
-            for document_id, document in enumerate(documents[separator_index:]):
+            for document_id, document in enumerate(documents[2330:]):
                 print(document_id)
                 agent = Agent(document)
                 agent.set_gold_state(document)
                 # agent.set_sieve()
                 policy.preprocess_document(document)
                 agent.move_to_end_state(policy)
-                conll_predict = agent.state_to_conll(agent.states[-1], document_id)
-                conll_actual = agent.state_to_conll(agent.state_gold, document_id)
-                predict.append(conll_predict)
-                actual.append(conll_actual)
+                words_predicted = agent.state_to_list(agent.states[-1], document_id)
+                words_actual = agent.state_to_list(agent.state_gold, document_id)
+
+                print(" ".join(words_actual))
+                print(" ".join(words_predicted))
+                #conll_predict = agent.state_to_conll(agent.states[-1], document_id)
+                #conll_actual = agent.state_to_conll(agent.state_gold, document_id)
+                #predict.append(conll_predict)
+                #actual.append(conll_actual)
                 # self.save_file(conll_predict, document_id, False)
                 # self.save_file(conll_actual, document_id, True)
                 #print(agent.actions)
@@ -121,6 +127,7 @@ class Test:
 
 # Get list of files to examine
 if __name__ == "__main__":
+    logging.getLogger('elmoformanylangs').setLevel(logging.WARNING)
     test = Test()
     test.build_model()
     test.run()

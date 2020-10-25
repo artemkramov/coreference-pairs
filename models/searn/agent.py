@@ -285,6 +285,41 @@ class Agent:
                 pairs_sieve.append((comb[0], comb[1], result))
         self.pairs_sieve = pairs_sieve
 
+    def state_to_list(self, state, document_id, offset=0):
+        document_id = str(document_id)
+        entity_counter = offset
+        groups = {}
+        c = []
+        counter = 0
+        number = 0
+        words = []
+        for cluster_id in state.clusters:
+            if len(cluster_id) > 0:
+                if not (cluster_id in groups):
+                    groups[cluster_id] = counter
+                    number = counter
+                    counter += 1
+                else:
+                    number = groups[cluster_id]
+            else:
+                number = counter
+                counter += 1
+            c.append(number)
+
+        for mention_id, mention in enumerate(self.tokens):
+
+            line_format = '{0}({1})'
+            group = '-'
+            for idx, token in enumerate(mention.tokens):
+                if mention.is_entity:
+                    if idx == 0:
+                        entity_counter += 1
+
+                    group = c[entity_counter - 1]
+                words.append(line_format.format(token.RawText, group))
+
+        return words
+
     def state_to_conll(self, state, document_id, offset=0):
         document_id = str(document_id)
         header = ["#begin document ({0});".format(document_id), "part 000"]
