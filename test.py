@@ -26,6 +26,8 @@ class Test:
 
     folder_conll = "test/conll"
 
+    folder_texts = "test/texts"
+
     model = None
 
     epoch = '-'
@@ -69,6 +71,15 @@ class Test:
         handle.write(conll)
         handle.close()
 
+    def save_file_texts(self, lines, epoch):
+        extension = "txt"
+        filename = "{0}.{1}".format(epoch, extension)
+        filename = join(self.folder_texts, filename)
+
+        handle = open(filename, mode='w', encoding='utf-8')
+        handle.write("\r\n".join(lines))
+        handle.close()
+
     def run(self):
 
         # Load mentions from DB
@@ -100,6 +111,8 @@ class Test:
 
             print(len(documents))
 
+            lines = []
+
             for document_id, document in enumerate(documents[2330:]):
                 print(document_id)
                 agent = Agent(document)
@@ -107,11 +120,15 @@ class Test:
                 # agent.set_sieve()
                 policy.preprocess_document(document)
                 agent.move_to_end_state(policy)
-                words_predicted = agent.state_to_list(agent.states[-1], document_id)
-                words_actual = agent.state_to_list(agent.state_gold, document_id)
+                words_predicted, groups_predicted = agent.state_to_list(agent.states[-1], document_id)
+                words_actual, groups_actual = agent.state_to_list(agent.state_gold, document_id)
 
-                print(" ".join(words_actual))
-                print(" ".join(words_predicted))
+                lines.append("Actual: " + " ".join(words_actual))
+                lines.append("Coreferent pairs: " + str(groups_actual))
+                lines.append("Predicted: " + " ".join(words_predicted))
+                lines.append("Coreferent pairs: " + str(groups_predicted))
+                lines.append("\r\n")
+                #print(" ".join(words_predicted))
                 #conll_predict = agent.state_to_conll(agent.states[-1], document_id)
                 #conll_actual = agent.state_to_conll(agent.state_gold, document_id)
                 #predict.append(conll_predict)
@@ -121,8 +138,9 @@ class Test:
                 #print(agent.actions)
 
             file = self.epoch
-            self.save_file(os.linesep.join(predict), file, False)
-            self.save_file(os.linesep.join(actual), file, True)
+            self.save_file_texts(lines, '-')
+            #self.save_file(os.linesep.join(predict), file, False)
+            #self.save_file(os.linesep.join(actual), file, True)
 
 
 # Get list of files to examine

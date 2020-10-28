@@ -306,6 +306,7 @@ class Agent:
                 counter += 1
             c.append(number)
 
+        clusters = {}
         for mention_id, mention in enumerate(self.tokens):
 
             line_format = '{0}({1})'
@@ -316,9 +317,17 @@ class Agent:
                         entity_counter += 1
 
                     group = c[entity_counter - 1]
+                    if not (group in clusters):
+                        clusters[group] = []
+                    if idx == 0:
+                        clusters[group].append(" ".join([t.RawText for t in mention.tokens]))
                 words.append(line_format.format(token.RawText, group))
 
-        return words
+        coreferent_groups = []
+        for group in clusters:
+            if len(clusters[group]) > 1:
+                coreferent_groups.append((group, ", ".join(clusters[group])))
+        return words, coreferent_groups
 
     def state_to_conll(self, state, document_id, offset=0):
         document_id = str(document_id)
