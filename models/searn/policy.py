@@ -16,6 +16,8 @@ class Policy:
     # Neural network model (binary classifier)
     model = None
 
+    model_semantic = None
+
     # Embedding to extract semantic data
     semantic_embedding: None
 
@@ -69,9 +71,15 @@ class Policy:
         #               'count_of_entities', 'is_lemma_equal', 'is_number_entities_same', 'is_gender_same',
         #               'is_proper_name', 'is_additional']
         # df[['count_of_words', 'count_of_entities']] = self.transformers.fit_transform(df)
-        prediction = np.mean(self.model.predict_proba(vectors)[:, 1])
+        prediction_scalar = np.mean(self.model.predict_proba(vectors)[:, 1])
+        cluster1, cluster2 = self.clusters_to_matrices(cluster_mention, cluster_antecedent)
 
-        if prediction > self.PROB_THRESHOLD:
+        # Run neural network to predict
+        prediction_network = self.model_semantic([cluster1, cluster2])[0][0]
+
+        #prediction = (prediction_scalar + prediction_network) / 2
+
+        if prediction_scalar > self.PROB_THRESHOLD or prediction_network > self.PROB_THRESHOLD:
             return True
         return False
 
@@ -90,6 +98,8 @@ class Policy:
         for mention in mentions:
             tokens.extend(mention.tokens)
         self.scalar_embedding.evaluate_tfidf(tokens)
+        self.semantic_embedding.tokens = tokens
+        self.semantic_embedding.clear_phrase_cache()
 
     # Form matrix of pairs of entities
     # from the entity links

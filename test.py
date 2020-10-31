@@ -10,6 +10,8 @@ from models.searn.agent import Agent
 from typing import List
 import pickle
 import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, LSTM, Bidirectional
 import joblib
 import dill
 from sklearn.ensemble import GradientBoostingClassifier, ExtraTreesClassifier
@@ -27,6 +29,8 @@ class Test:
 
     model = None
 
+    model_semantic = None
+
     epoch = '-'
 
     transformers = None
@@ -36,6 +40,22 @@ class Test:
         config = configparser.ConfigParser()
         config.read('config/train.ini')
         self.config = config
+
+    # Build model due to the configuration parameters
+    def build_model_semantic(self, epoch_number=None):
+        embedding_size = 1024 * 4
+        lstm_units = 128
+        dense_units = 128
+
+        model = CoreferentClusterModel(embedding_size, lstm_units, dense_units)
+        if not (epoch_number is None):
+            subfolder = join(self.folder_models, str(epoch_number))
+            # Prepare filenames of the model
+            filename_weights = self.filename_template.format(epoch_number)
+            model.load_weights(join(subfolder, filename_weights))
+            print("Model is loaded")
+            self.epoch = epoch_number
+        self.model_semantic = model
 
     # Build model due to the configuration parameters
     def build_model(self):
@@ -79,6 +99,8 @@ class Test:
         policy = Policy(self.model, self.transformers)
         reference_policy = ReferencePolicy()
 
+        policy.model_semantic = self.model_semantic
+
         # Percentage of documents for training purpose
         training_split = float(config_training['training_split'])
 
@@ -103,7 +125,7 @@ class Test:
                 print(document_id)
                 agent = Agent(document)
                 agent.set_gold_state(document)
-                # agent.set_sieve()
+                agent.set_sieve()
                 policy.preprocess_document(document)
                 agent.move_to_end_state(policy)
                 conll_predict = agent.state_to_conll(agent.states[-1], document_id)
@@ -119,8 +141,29 @@ class Test:
             self.save_file(os.linesep.join(actual), file, True)
 
 
+class CoreferentClusterModel(Model):
+
+  def __init__(self, embedding_size, lstm_units, dense_units, **kwargs):
+    super(CoreferentClusterModel, self).__init__(**kwargs)
+
+    self.bilstm = Bidirectional(LSTM(lstm_units, activation='tanh', recurrent_activation="sigmoid", input_shape=(None, embedding_size), dtype=tf.float32))
+    self.dense1 = Dense(dense_units)
+    self.dense2 = Dense(1, activation='sigmoid')
+
+  def call(self, inputs, training=None, mask=None):
+
+    cluster1 = self.bilstm(inputs[0])
+    cluster2 = self.bilstm(inputs[1])
+
+    cluster = tf.concat([cluster1, cluster2], axis=-1)
+    x = self.dense1(cluster)
+
+    return self.dense2(x)
+
+
 # Get list of files to examine
 if __name__ == "__main__":
     test = Test()
     test.build_model()
+    test.build_model_semantic(20)
     test.run()
