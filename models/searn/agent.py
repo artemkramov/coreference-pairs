@@ -27,6 +27,8 @@ class Agent:
 
     pairs_sieve = []
 
+    predictions = []
+
     # From input matrices to compute
     @staticmethod
     def get_matrices(policy, state_current, mentions):
@@ -208,6 +210,102 @@ class Agent:
         # print("Iterations: {0}, {1}".format(c, time.clock() - start))
         return self.states
 
+    # Performing the necessary action depending on the current situation
+    def move_with_gold(self, policy: Policy, action: Action = None):
+
+        state_current = self.get_current_state()
+
+        # If it is the end of the list or there is just a single mention
+        # than return corresponding flag
+        if state_current.current_mention_idx == len(self.mentions) or len(self.mentions) < 2:
+            return False
+
+        # Get clusters of the mention and antecedent
+        cluster_mention = state_current.get_cluster_of_mention(state_current.current_mention_idx, self.mentions)
+        cluster_antecedent = state_current.get_cluster_of_mention(state_current.current_antecedent_idx,
+                                                                  self.mentions)
+
+        # Apply policy to find out which action should be applied
+        prediction_network, prediction_scalar = policy.apply_test(cluster_mention, cluster_antecedent)
+
+        self.cluster1 = cluster_mention
+        self.cluster2 = cluster_antecedent
+
+        is_merge = False
+        if isinstance(action, MergeAction):
+            is_merge = True
+
+        self.predictions.append([prediction_network, prediction_scalar, int(is_merge)])
+
+        state_new = action.run(state_current)
+
+        # Reset current mention and antecedent for new state
+        if is_merge:
+            state_new.current_antecedent_idx = state_new.current_mention_idx
+            state_new.current_mention_idx += 1
+        else:
+            if state_new.current_antecedent_idx > 0:
+                state_new.current_antecedent_idx -= 1
+            else:
+                state_new.current_antecedent_idx = state_new.current_mention_idx
+                state_new.current_mention_idx += 1
+        return state_new
+
+    # Modify state till the end
+    def move_to_end_state_with_gold(self, policy, state_gold: 'State' = None):
+
+        # Define trajectory which contains all states
+        state_init = self.get_current_state()
+        next_step_exists = True
+        state_current = state_init
+        c = 1
+        self.actions = {'merge': 0, 'pass': 0}
+        import time
+        start = time.clock()
+
+        policy_reference = ReferencePolicy()
+
+        # While it is possible to perform 'move' operation
+        while next_step_exists:
+
+            # if c > 6:
+            #  break
+
+            c += 1
+            # If the 'gold' state isn't defined
+            # than move with learn policy
+            # Else use reference policy to move
+            if state_gold is None:
+                action = None
+                # Check if pairs from sieve contain current pair
+                result = None
+                for pair in self.pairs_sieve:
+                    if state_current.current_antecedent_idx == pair[0] and state_current.current_mention_idx == \
+                            pair[1]:
+                        result = pair[2]
+                        break
+                if result is not None:
+                    if result:
+                        action = MergeAction()
+                    else:
+                        action = PassAction()
+            else:
+                action = policy_reference.apply(state_current, state_gold.clusters)
+
+            # Make move
+            state_new = self.move_with_gold(policy, action)
+
+            # If it is no more possible to move again
+            # than stop process
+            # Else continue with new state
+            if not state_new:
+                next_step_exists = False
+            else:
+                self.states.append(state_new)
+                state_current = state_new
+        # print("Iterations: {0}, {1}".format(c, time.clock() - start))
+        return self.states
+
     def push_state(self, clusters):
         state = State(clusters)
         self.states.append(state)
@@ -285,6 +383,50 @@ class Agent:
                 pairs_sieve.append((comb[0], comb[1], result))
         self.pairs_sieve = pairs_sieve
 
+    def state_to_list(self, state, document_id, offset=0):
+        document_id = str(document_id)
+        entity_counter = offset
+        groups = {}
+        c = []
+        counter = 0
+        number = 0
+        words = []
+        for cluster_id in state.clusters:
+            if len(cluster_id) > 0:
+                if not (cluster_id in groups):
+                    groups[cluster_id] = counter
+                    number = counter
+                    counter += 1
+                else:
+                    number = groups[cluster_id]
+            else:
+                number = counter
+                counter += 1
+            c.append(number)
+
+        clusters = {}
+        for mention_id, mention in enumerate(self.tokens):
+
+            line_format = '{0}({1})'
+            group = '-'
+            for idx, token in enumerate(mention.tokens):
+                if mention.is_entity:
+                    if idx == 0:
+                        entity_counter += 1
+
+                    group = c[entity_counter - 1]
+                    if not (group in clusters):
+                        clusters[group] = []
+                    if idx == 0:
+                        clusters[group].append(" ".join([t.RawText for t in mention.tokens]))
+                words.append(line_format.format(token.RawText, group))
+
+        coreferent_groups = []
+        for group in clusters:
+            if len(clusters[group]) > 1:
+                coreferent_groups.append((group, ", ".join(clusters[group])))
+        return words, coreferent_groups
+
     def state_to_conll(self, state, document_id, offset=0):
         document_id = str(document_id)
         header = ["#begin document ({0});".format(document_id), "part 000"]
@@ -354,6 +496,50 @@ class Agent1:
         cluster_antecedent = state_current.get_cluster_of_mention(state_current.current_antecedent_idx, mentions)
 
         return policy.clusters_to_matrices(cluster_mention, cluster_antecedent)
+
+    def state_to_list(self, state, document_id, offset=0):
+        document_id = str(document_id)
+        entity_counter = offset
+        groups = {}
+        c = []
+        counter = 0
+        number = 0
+        words = []
+        for cluster_id in state.clusters:
+            if len(cluster_id) > 0:
+                if not (cluster_id in groups):
+                    groups[cluster_id] = counter
+                    number = counter
+                    counter += 1
+                else:
+                    number = groups[cluster_id]
+            else:
+                number = counter
+                counter += 1
+            c.append(number)
+
+        clusters = {}
+        for mention_id, mention in enumerate(self.tokens):
+
+            line_format = '{0}({1})'
+            group = '-'
+            for idx, token in enumerate(mention.tokens):
+                if mention.is_entity:
+                    if idx == 0:
+                        entity_counter += 1
+
+                    group = c[entity_counter - 1]
+                    if not (group in clusters):
+                        clusters[group] = []
+                    if idx == 0:
+                        clusters[group].append(" ".join([t.RawText for t in mention.tokens]))
+                words.append(line_format.format(token.RawText, group))
+
+        coreferent_groups = []
+        for group in clusters:
+            if len(clusters[group]) > 1:
+                coreferent_groups.append((group, ", ".join(clusters[group])))
+        return words, coreferent_groups
 
     def state_to_conll(self, state, document_id, offset=0):
         document_id = str(document_id)

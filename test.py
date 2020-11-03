@@ -27,6 +27,8 @@ class Test:
 
     folder_conll = "test/conll"
 
+    folder_texts = "test/texts"
+
     model = None
 
     model_semantic = None
@@ -88,6 +90,15 @@ class Test:
         handle.write(conll)
         handle.close()
 
+    def save_file_texts(self, lines, epoch):
+        extension = "txt"
+        filename = "{0}.{1}".format(epoch, extension)
+        filename = join(self.folder_texts, filename)
+
+        handle = open(filename, mode='w', encoding='utf-8')
+        handle.write("\r\n".join(lines))
+        handle.close()
+
     def run(self):
 
         # Load mentions from DB
@@ -121,24 +132,43 @@ class Test:
 
             print(len(documents))
 
+            lines = []
+
+            predictions = []
+
             for document_id, document in enumerate(documents[separator_index:]):
                 print(document_id)
                 agent = Agent(document)
                 agent.set_gold_state(document)
-                agent.set_sieve()
+                #agent.set_sieve()
                 policy.preprocess_document(document)
                 agent.move_to_end_state(policy)
+                #print(agent.predictions)
+                #predictions = agent.predictions
+
                 conll_predict = agent.state_to_conll(agent.states[-1], document_id)
                 conll_actual = agent.state_to_conll(agent.state_gold, document_id)
                 predict.append(conll_predict)
                 actual.append(conll_actual)
+
+                words_predicted, groups_predicted = agent.state_to_list(agent.states[-1], document_id)
+                words_actual, groups_actual = agent.state_to_list(agent.state_gold, document_id)
+
+                lines.append("Actual: " + " ".join(words_actual))
+                lines.append("Coreferent pairs: " + str(groups_actual))
+                lines.append("Predicted: " + " ".join(words_predicted))
+                lines.append("Coreferent pairs: " + str(groups_predicted))
+                lines.append("\r\n")
                 # self.save_file(conll_predict, document_id, False)
                 # self.save_file(conll_actual, document_id, True)
-                #print(agent.actions)
+                #print(agent.actions)'''
 
             file = self.epoch
             self.save_file(os.linesep.join(predict), file, False)
             self.save_file(os.linesep.join(actual), file, True)
+            self.save_file_texts(lines, self.epoch)
+            # with open('test/predictions_1.pkl', 'wb') as file:
+            #     dill.dump(predictions, file)
 
 
 class CoreferentClusterModel(Model):

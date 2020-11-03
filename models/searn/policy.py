@@ -56,7 +56,7 @@ class Policy:
         return prediction
 
     # Evaluate ability for cluster merging
-    def apply(self, cluster_mention, cluster_antecedent):
+    def apply_test(self, cluster_mention, cluster_antecedent):
         vectors = []
         for mention1 in cluster_mention:
             for mention2 in cluster_antecedent:
@@ -77,10 +77,31 @@ class Policy:
         # Run neural network to predict
         prediction_network = self.model_semantic([cluster1, cluster2])[0][0]
 
-        #prediction = (prediction_scalar + prediction_network) / 2
+        return prediction_network.numpy(), prediction_scalar
 
-        if prediction_scalar > self.PROB_THRESHOLD or prediction_network > self.PROB_THRESHOLD:
-            return True
+    # Evaluate ability for cluster merging
+    def apply(self, cluster_mention, cluster_antecedent):
+
+        cluster1, cluster2 = self.clusters_to_matrices(cluster_mention, cluster_antecedent)
+        # Run neural network to predict
+        prediction_network = self.model_semantic([cluster1, cluster2])[0][0]
+
+        if prediction_network >= self.PROB_THRESHOLD:
+
+            vectors = []
+            for mention1 in cluster_mention:
+                for mention2 in cluster_antecedent:
+                    pair = [mention2, mention1]
+                    vector = self.scalar_embedding.pair2vec(pair)
+                    vector.append(self.semantic_embedding.get_pair_similarity(pair))
+                    vectors.append(vector)
+            vectors = np.array(vectors)
+            vectors = self.transformers.transform(vectors)
+            prediction_scalar = np.mean(self.model.predict_proba(vectors)[:, 1])
+
+            if prediction_scalar > 0.1:
+                return True
+
         return False
 
     # Transform pair of clusters to common matrix
